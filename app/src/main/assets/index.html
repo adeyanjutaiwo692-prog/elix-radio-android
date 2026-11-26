@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090b13">
+<title>ELIX Radio</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#090b13;color:#f7f5ff;font-family:Arial,sans-serif}header{padding:28px 22px 22px;background:linear-gradient(140deg,#24133e,#101827 75%);border-bottom:1px solid #302641}.brand{font-size:13px;letter-spacing:4px;color:#d9b66d;font-weight:bold}.logo{font-size:36px;font-weight:800;letter-spacing:2px;margin:12px 0 4px}.tag{color:#c8c1d4;font-size:14px}.wrap{padding:22px;max-width:720px;margin:auto}.live{background:#171b29;border:1px solid #343044;border-radius:18px;padding:18px;margin-bottom:20px}.eyebrow{font-size:11px;letter-spacing:2px;color:#e1bc72;font-weight:bold}.live h2{font-size:23px;margin:9px 0}.live p,.muted{color:#b7b4c4;line-height:1.5;font-size:14px}.play{display:block;width:100%;padding:15px;border:0;border-radius:12px;background:#d5ae66;color:#17121e;font-size:16px;font-weight:bold;margin-top:15px}.player{display:none;margin-top:15px;aspect-ratio:16/9}.player iframe{width:100%;height:100%;border:0;border-radius:12px}.section{font-size:18px;margin:24px 0 12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.tile{background:#151927;border:1px solid #292d3d;border-radius:15px;padding:17px;min-height:112px}.tile b{display:block;margin:8px 0}.tile span{font-size:13px;color:#aaa8b8}.icon{font-size:22px}footer{text-align:center;padding:25px 15px 35px;color:#8d899a;font-size:12px}a{color:#e2c27f}
+</style>
+</head>
+<body>
+<header><div class="brand">ELIX CHRISTIAN MEDIA NETWORK</div><div class="logo">ELIX RADIO</div><div class="tag">Faith. Truth. Inspiration.</div></header>
+<main class="wrap">
+<section class="live"><div class="eyebrow">● LIVE PROGRAMME</div><h2>Stay connected to the Word</h2><p>Messages, worship, conversations and live programmes to strengthen your walk with God.</p><button class="play" onclick="toggleLive()">▶  Listen / Watch Live</button><div class="player" id="player"><iframe id="liveFrame" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen title="ELIX Radio live programme"></iframe></div><p class="muted">Live programme source: Glory Realm Global · Minister PAUL AYO</p></section>
+<h3 class="section">Explore ELIX Radio</h3>
+<div class="grid">
+<div class="tile"><div class="icon">🎙️</div><b>Sermons</b><span>Preaching and teaching of the Word.</span></div>
+<div class="tile"><div class="icon">🎵</div><b>Worship</b><span>Worship and praise moments.</span></div>
+<div class="tile"><div class="icon">💬</div><b>Interviews</b><span>Conversations and testimonies.</span></div>
+<div class="tile"><div class="icon">📡</div><b>Live programmes</b><span>Join special broadcasts and events.</span></div>
+</div>
+<h3 class="section">Our first main voice</h3><p class="muted"><b style="color:#fff">Minister PAUL AYO</b><br>Featuring invited ministers and presenters as ELIX Radio grows.</p>
+</main>
+<footer>ELIX RADIO · An ELIX Christian Media Network platform<br>Faith. Truth. Inspiration.</footer>
+<script>
+function toggleLive(){const p=document.getElementById('player'),f=document.getElementById('liveFrame');if(p.style.display==='block'){f.src='';p.style.display='none'}else{f.src='https://www.youtube-nocookie.com/embed/zYNNWEN9Ujc?autoplay=1&rel=0';p.style.display='block'}}
+</script>
+</body></html>
