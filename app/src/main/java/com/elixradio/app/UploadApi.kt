@@ -15,7 +15,7 @@ object UploadApi {
     private const val MAX_FILE_BYTES = 5L * 1024L * 1024L * 1024L
     private const val CHUNK_BYTES = 6 * 1024 * 1024
 
-    fun upload(context: Context, uri: Uri, title: String, callback: (Result) -> Unit) {
+    fun upload(context: Context, uri: Uri, title: String, selectedType: String, category: String, callback: (Result) -> Unit) {
         thread {
             val result = try {
                 val token = AuthApi.accessToken(context)
@@ -25,10 +25,10 @@ object UploadApi {
                 val mediaType = when {
                     mime.startsWith("audio/") -> "audio"
                     mime.startsWith("video/") -> "video"
-                    mime == "application/pdf" -> "pdf"
                     mime.startsWith("image/") -> "image"
-                    else -> throw IllegalArgumentException("Only audio, video, PDF and image files are supported.")
+                    else -> throw IllegalArgumentException("Choose an audio, video or image file.")
                 }
+                require(mediaType == selectedType) { "The selected file does not match the media type you chose." }
                 val size = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
                     ?: throw IllegalStateException("Could not read the selected file size.")
                 require(size > 0) { "The selected file is empty." }
@@ -133,7 +133,7 @@ object UploadApi {
                 val row = JSONObject()
                     .put("uploaded_by", userId)
                     .put("title", title)
-                    .put("kind", "other")
+                    .put("kind", category)
                     .put("media_type", mediaType)
                     .put("file_path", path)
                     .put("rights_confirmed", true)
