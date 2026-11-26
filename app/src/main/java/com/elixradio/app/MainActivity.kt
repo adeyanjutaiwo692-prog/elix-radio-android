@@ -235,8 +235,16 @@ class MainActivity : Activity() {
                     info("Uploading file…")
                     UploadApi.upload(this, uri, title) { result ->
                         runOnUiThread {
-                            info(result.message)
-                            if (result.ok) showLibrary()
+                            if (result.ok) {
+                                info(result.message)
+                                showLibrary()
+                            } else {
+                                android.app.AlertDialog.Builder(this)
+                                    .setTitle("ELIX upload could not be published")
+                                    .setMessage(result.message)
+                                    .setPositiveButton("OK", null)
+                                    .show()
+                            }
                         }
                     }
                 }
