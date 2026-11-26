@@ -22,6 +22,7 @@ class MainActivity : Activity() {
     private val muted = Color.rgb(190, 193, 208)
     private lateinit var content: LinearLayout
     private lateinit var nav: LinearLayout
+    private val uploadRequestCode = 4107
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -134,18 +135,96 @@ class MainActivity : Activity() {
     }
 
     private fun showLibrary() {
-        base("Library", "On-demand content", "LIBRARY", "Explore teaching, worship and Christian media.")
-        listOf(
-            "Sermons" to "Search by preacher, ministry, topic and date",
-            "Worship" to "Songs, worship services and praise sessions",
-            "Conferences" to "Conference messages and crusade archives",
-            "Prayer" to "Prayer sessions and intercession",
-            "Interviews" to "Christian conversations and testimonies",
-            "Bible Study" to "Bible lessons and teaching series",
-            "Podcasts" to "Audio programmes and discussions",
-            "Children & Family" to "Christian family resources"
-        ).forEach { (a,b) -> tile(content,a,b) { info("The searchable media catalogue will populate after ELIX backend and ministry uploads are connected.") } }
-        notice(content, "Offline downloads and searchable archives will be enabled when media storage and secure playback are connected.")
+        base("Library", "On-demand content", "ELIX MEDIA LIBRARY", "Sermons, worship, videos, podcasts and Christian resources.")
+        if (AuthApi.isSignedIn(this)) {
+            button(content, "＋  UPLOAD A FILE") { chooseUploadFile() }
+            space(content, 12)
+        } else {
+            notice(content, "Sign in or create an account to upload audio, video, PDF or image files.")
+        }
+        text(content, "RECENT UPLOADS", 17, white, true)
+        space(content, 8)
+        val list = card(content)
+        text(list, "Loading published media…", 14, muted, false)
+        SupabaseApi.get("media_items?select=id,title,media_type,file_path,created_at&status=eq.approved&order=created_at.desc&limit=50") { rows ->
+            runOnUiThread {
+                list.removeAllViews()
+                if (rows.length() == 0) text(list, "No files have been uploaded yet.", 14, muted, false)
+                for (i in 0 until rows.length()) {
+                    val item = rows.getJSONObject(i)
+                    val title = item.optString("title", "ELIX media")
+                    val kind = item.optString("media_type", "media").uppercase()
+                    val path = item.optString("file_path")
+                    text(list, title, 16, gold, true)
+                    text(list, kind + " · Tap to open", 12, muted, false)
+                    val open = Button(this).apply {
+                        text = "OPEN FILE"
+                        isAllCaps = false
+                        setOnClickListener {
+                            val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
+                            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                            catch (_: Exception) { info("Could not open this file.") }
+                        }
+                    }
+                    list.addView(open, fullWidth())
+                    space(list, 10)
+                }
+            }
+        }
+        notice(content, "By uploading, you confirm that you own the content or have permission to share it. Non-Christian or inappropriate content may be removed by ELIX administrators.")
+    }
+
+    private fun chooseUploadFile() {
+        if (!AuthApi.isSignedIn(this)) {
+            info("Please sign in first.")
+            showAccount()
+            return
+        }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/mp4", "video/quicktime", "application/pdf", "image/jpeg", "image/png", "image/webp"))
+        }
+        startActivityForResult(intent, uploadRequestCode)
+    }
+
+    @Deprecated("Use platform activity result APIs")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == uploadRequestCode && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            val titleInput = android.widget.EditText(this).apply {
+                hint = "Give your upload a title"
+                setTextColor(white)
+                setHintTextColor(muted)
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+            }
+            val dialog = android.app.AlertDialog.Builder(this)
+                .setTitle("Publish to ELIX Radio")
+                .setMessage("Your file will be published immediately for everyone to access.")
+                .setView(titleInput)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("UPLOAD", null)
+                .create()
+            dialog.setOnShowListener {
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val title = titleInput.text.toString().trim()
+                    if (title.isBlank()) {
+                        titleInput.error = "Enter a title"
+                        return@setOnClickListener
+                    }
+                    dialog.dismiss()
+                    info("Uploading file…")
+                    UploadApi.upload(this, uri, title) { result ->
+                        runOnUiThread {
+                            info(result.message)
+                            if (result.ok) showLibrary()
+                        }
+                    }
+                }
+            }
+            dialog.show()
+        }
     }
 
     private fun showMinistries() {
@@ -218,6 +297,22 @@ class MainActivity : Activity() {
             setSingleLine(true)
         }
         fields.addView(passwordInput)
+        val policyCheck = android.widget.CheckBox(this).apply {
+            text = "I agree to the ELIX Terms and Christian Content Policy"
+            setTextColor(white)
+            buttonTintList = android.content.res.ColorStateList.valueOf(gold)
+            textSize = 13f
+        }
+        if (create) {
+            fields.addView(policyCheck)
+            val policyText = TextView(this).apply {
+                text = "ELIX is a Christian media platform. Uploads must be Christian content and must comply with our purpose. Non-Christian, inappropriate or unrelated content may be removed by ELIX administrators without prior notice. Repeated violations may lead to account suspension or termination. You confirm that you own or have permission to share anything you upload."
+                textSize = 12f
+                setTextColor(muted)
+                setPadding(0, dp(6), 0, dp(8))
+            }
+            fields.addView(policyText)
+        }
         android.app.AlertDialog.Builder(this)
             .setTitle(if (create) "Create ELIX account" else "Sign in to ELIX")
             .setView(fields)
@@ -226,8 +321,8 @@ class MainActivity : Activity() {
                 val name = nameInput.text.toString().trim()
                 val email = emailInput.text.toString().trim()
                 val password = passwordInput.text.toString()
-                if (email.isBlank() || password.length < 6 || (create && name.isBlank())) {
-                    info("Enter the required details. Password must contain at least 6 characters.")
+                if (email.isBlank() || password.length < 6 || (create && name.isBlank()) || (create && !policyCheck.isChecked)) {
+                    info(if (create && !policyCheck.isChecked) "Please accept the ELIX Christian Content Policy to register." else "Enter the required details. Password must contain at least 6 characters.")
                 } else {
                     val callback: (AuthApi.Result) -> Unit = { result ->
                         runOnUiThread {
