@@ -47,15 +47,28 @@ before insert on public.media_items
 for each row execute function public.publish_member_upload();
 
 -- Publicly readable media files; only signed-in users can upload into their own folder.
-update storage.buckets
+insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'elix-media', 'elix-media', true, 5368709120,
+  array['audio/mpeg','audio/mp4','audio/aac','audio/wav','audio/x-wav','audio/ogg',
+        'video/mp4','video/quicktime','application/pdf','image/jpeg','image/png','image/webp']
+)
+on conflict (id) do update
 set public = true,
-    file_size_limit = 104857600,
+    file_size_limit = 5368709120,
+    allowed_mime_types = array[
+      'audio/mpeg','audio/mp4','audio/aac','audio/wav','audio/x-wav','audio/ogg',
+      'video/mp4','video/quicktime','application/pdf','image/jpeg','image/png','image/webp'
+    ];
+
+/* The global Storage upload limit in the Supabase dashboard must also be at least 5 GB. */
+/*
     allowed_mime_types = array[
       'audio/mpeg','audio/mp4','audio/aac','audio/wav','audio/x-wav','audio/ogg',
       'video/mp4','video/quicktime','application/pdf',
       'image/jpeg','image/png','image/webp'
     ]
-where id = 'elix-media';
+where id = 'elix-media'; */
 
 drop policy if exists "ELIX media files are publicly readable" on storage.objects;
 create policy "ELIX media files are publicly readable"
