@@ -281,7 +281,17 @@ class MainActivity : Activity() {
         base("Account", "Your ELIX experience", "MY ACCOUNT", "Sign in or create your free ELIX listener account.")
         if (AuthApi.isSignedIn(this)) {
             text(content, "Signed in as " + AuthApi.currentName(this).ifBlank { "ELIX listener" }, 16, gold, true)
+            text(content, "Account role: " + AuthApi.currentRole(this).replace('_', ' ').uppercase(), 12, muted, true)
             space(content, 12)
+            if (AuthApi.currentRole(this) == "super_admin") {
+                button(content, "⚙  OPEN DEVELOPER DASHBOARD") { showDeveloperDashboard() }
+                space(content, 10)
+            }
+            AuthApi.fetchRole(this) { role ->
+                runOnUiThread {
+                    if (role == "super_admin" && isFinishing.not()) showAccount()
+                }
+            }
             button(content, "SIGN OUT") {
                 AuthApi.signOut(this)
                 showAccount()
@@ -360,6 +370,81 @@ class MainActivity : Activity() {
                     else AuthApi.signIn(this, email, password, callback)
                 }
             }.show()
+    }
+
+    private fun showDeveloperDashboard() {
+        if (!AuthApi.isSignedIn(this)) {
+            showAccount()
+            return
+        }
+        base("Account", "Restricted developer access", "ELIX CONTROL ROOM", "Owner dashboard · Full platform oversight")
+        if (AuthApi.currentRole(this) != "super_admin") {
+            notice(content, "Access denied. This account does not have the ELIX super administrator role.")
+            button(content, "BACK TO ACCOUNT") { showAccount() }
+            return
+        }
+        val stats = card(content)
+        text(stats, "PLATFORM OVERVIEW", 13, gold, true)
+        text(stats, "Loading account and platform statistics…", 13, muted, false)
+        AdminApi.get(this, "profiles?select=id&limit=1000") { users, userError ->
+            AdminApi.get(this, "media_items?select=id&limit=1000") { media, mediaError ->
+                AdminApi.get(this, "ministries?select=id&limit=1000") { ministries, ministryError ->
+                    AdminApi.get(this, "programmes?select=id&limit=1000") { programmes, programmeError ->
+                        runOnUiThread {
+                            stats.removeAllViews()
+                            text(stats, "PLATFORM OVERVIEW", 13, gold, true)
+                            text(stats, "Registered accounts: ${users.length()}", 15, white, true)
+                            text(stats, "Media records: ${media.length()}", 15, white, true)
+                            text(stats, "Ministry channels: ${ministries.length()}", 15, white, true)
+                            text(stats, "Programmes: ${programmes.length()}", 15, white, true)
+                            val errors = listOfNotNull(userError, mediaError, ministryError, programmeError)
+                            if (errors.isNotEmpty()) text(stats, "Some statistics could not load: " + errors.first(), 11, signalRed, false)
+                        }
+                    }
+                }
+            }
+        }
+        space(content, 12)
+        text(content, "MANAGE ELIX", 16, white, true)
+        tile(content, "User accounts", "Review registered members and account roles") {
+            showAdminList("USER ACCOUNTS", "profiles?select=display_name,role,created_at&order=created_at.desc&limit=100", "display_name", "role")
+        }
+        tile(content, "Media catalogue", "Review published and uploaded content") {
+            showAdminList("MEDIA CATALOGUE", "media_items?select=title,media_type,status,created_at&order=created_at.desc&limit=100", "title", "status")
+        }
+        tile(content, "Ministry channels", "Review ministry records and approval status") {
+            showAdminList("MINISTRY CHANNELS", "ministries?select=name,city,approved&order=name.asc&limit=100", "name", "city")
+        }
+        tile(content, "Programmes", "Review scheduled and completed programmes") {
+            showAdminList("PROGRAMMES", "programmes?select=title,status,starts_at&order=starts_at.desc&limit=100", "title", "status")
+        }
+        notice(content, "Developer access is verified against the signed-in Supabase account role. Never share your password or private service-role key.")
+        button(content, "BACK TO MY ACCOUNT") { showAccount() }
+    }
+
+    private fun showAdminList(title: String, query: String, primary: String, secondary: String) {
+        base("Account", "Developer dashboard", title, "Restricted ELIX platform records")
+        val list = card(content)
+        text(list, "Loading records…", 13, muted, false)
+        AdminApi.get(this, query) { rows, error ->
+            runOnUiThread {
+                list.removeAllViews()
+                if (error != null) {
+                    text(list, error, 13, signalRed, false)
+                } else if (rows.length() == 0) {
+                    text(list, "No records found.", 13, muted, false)
+                } else {
+                    for (i in 0 until rows.length()) {
+                        val item = rows.getJSONObject(i)
+                        text(list, item.optString(primary).ifBlank { "Untitled record" }, 15, gold, true)
+                        val detail = item.optString(secondary)
+                        if (detail.isNotBlank()) text(list, detail, 12, muted, false)
+                        space(list, 8)
+                    }
+                }
+            }
+        }
+        button(content, "BACK TO DEVELOPER DASHBOARD") { showDeveloperDashboard() }
     }
 
     private fun openLive() {
