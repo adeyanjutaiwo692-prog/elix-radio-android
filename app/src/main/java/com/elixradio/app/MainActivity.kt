@@ -26,6 +26,8 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var nav: LinearLayout
     private val uploadRequestCode = 4107
+    private var selectedUploadType = "audio"
+    private var libraryType = "all"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -193,17 +195,14 @@ class MainActivity : Activity() {
     }
 
     private fun chooseUploadFile() {
-        if (!AuthApi.isSignedIn(this)) {
-            info("Please sign in first.")
-            showAccount()
-            return
-        }
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/mp4", "video/quicktime", "application/pdf", "image/jpeg", "image/png", "image/webp"))
-        }
-        startActivityForResult(intent, uploadRequestCode)
+        if (!AuthApi.isSignedIn(this)) { info("Please sign in first."); showAccount(); return }
+        android.app.AlertDialog.Builder(this).setTitle("Choose media type")
+            .setItems(arrayOf("Audio", "Video", "Images")) { _, which ->
+                selectedUploadType = arrayOf("audio", "video", "image")[which]
+                val pickerType = if (selectedUploadType == "audio") "audio/*" else if (selectedUploadType == "video") "video/*" else "image/*"
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = pickerType }
+                startActivityForResult(intent, uploadRequestCode)
+            }.show()
     }
 
     @Deprecated("Use platform activity result APIs")
@@ -219,7 +218,7 @@ class MainActivity : Activity() {
             }
             val dialog = android.app.AlertDialog.Builder(this)
                 .setTitle("Publish to ELIX Radio")
-                .setMessage("Your file will be published immediately for everyone to access.")
+                .setMessage("Selected type: " + selectedUploadType.uppercase() + ". Add a title, then choose its category.")
                 .setView(titleInput)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("UPLOAD", null)
@@ -232,8 +231,12 @@ class MainActivity : Activity() {
                         return@setOnClickListener
                     }
                     dialog.dismiss()
-                    info("Uploading file…")
-                    UploadApi.upload(this, uri, title) { result ->
+                    val categoryLabels = arrayOf("Sermon", "Worship", "Conference", "Prayer", "Interview", "Bible Study", "Children & Family", "Podcast", "Other")
+                    val categoryKeys = arrayOf("sermon", "worship", "conference", "prayer", "interview", "bible_study", "children_family", "podcast", "other")
+                    android.app.AlertDialog.Builder(this).setTitle("Choose content category")
+                        .setItems(categoryLabels) { _, index ->
+                            info("Uploading file…")
+                            UploadApi.upload(this, uri, title, selectedUploadType, categoryKeys[index]) { result ->
                         runOnUiThread {
                             if (result.ok) {
                                 info(result.message)
@@ -246,7 +249,9 @@ class MainActivity : Activity() {
                                     .show()
                             }
                         }
-                    }
+                            }
+                        }
+                        .show()
                 }
             }
             dialog.show()
