@@ -405,7 +405,7 @@ class MainActivity : Activity() {
         if (AuthApi.isSignedIn(this)) button(content, "＋  UPLOAD MEDIA") { chooseUploadFile() }
         else notice(content, "Sign in to upload audio, video or image files.")
         val filters = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("all" to "ALL", "audio" to "AUDIO", "video" to "VIDEO", "image" to "IMAGES").forEach { pair ->
+        listOf("all" to "ALL", "audio" to "AUDIO", "video" to "VIDEO", "image" to "IMAGES", "pdf" to "BOOKS").forEach { pair ->
             val b = Button(this).apply { text = pair.second; textSize = 10f; isAllCaps = false; setOnClickListener { libraryType = pair.first; showLibrary() } }
             filters.addView(b, LinearLayout.LayoutParams(0, dp(44), 1f))
         }
@@ -532,7 +532,7 @@ class MainActivity : Activity() {
         if(!AuthApi.isSignedIn(this)){showAccount();return}
         SupabaseApi.getWithError(this,"ministries?select=id,name&owner_id=eq.${AuthApi.currentUserId(this)}&order=name.asc"){ rows,e -> runOnUiThread {
             val labels=mutableListOf("Personal account"); val ids=mutableListOf<String?>(null); for(i in 0 until rows.length()){val p=rows.getJSONObject(i);labels.add(p.optString("name"));ids.add(p.optString("id"))}
-            android.app.AlertDialog.Builder(this).setTitle("Publish under which account?").setItems(labels.toTypedArray()){_,idx -> selectedPageId=ids[idx]; android.app.AlertDialog.Builder(this).setTitle("Choose media type").setItems(arrayOf("Audio","Video","Images")){_,which -> selectedUploadType=arrayOf("audio","video","image")[which]; val type=if(selectedUploadType=="audio")"audio/*" else if(selectedUploadType=="video")"video/*" else "image/*"; val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);this.type=type};startActivityForResult(intent,uploadRequestCode)}.show()}.show()
+            android.app.AlertDialog.Builder(this).setTitle("Publish under which account?").setItems(labels.toTypedArray()){_,idx -> selectedPageId=ids[idx]; android.app.AlertDialog.Builder(this).setTitle("Choose media type").setItems(arrayOf("Audio","Video","Images","Book (PDF)")){_,which -> selectedUploadType=arrayOf("audio","video","image","pdf")[which]; val type=if(selectedUploadType=="audio")"audio/*" else if(selectedUploadType=="video")"video/*" else if(selectedUploadType=="pdf")"application/pdf" else "image/*"; val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);this.type=type};startActivityForResult(intent,uploadRequestCode)}.show()}.show()
         } }
     }
     @Deprecated("Use platform activity result APIs")
