@@ -10,7 +10,7 @@ import java.util.UUID
 import kotlin.concurrent.thread
 
 object UploadApi {
-    data class Result(val ok: Boolean, val message: String)
+    data class Result(val ok: Boolean, val message: String, val filePath: String? = null)
 
     private const val MAX_FILE_BYTES = 5L * 1024L * 1024L * 1024L
     private const val CHUNK_BYTES = 6 * 1024 * 1024
@@ -167,7 +167,7 @@ object UploadApi {
                 if (recordBody.isBlank()) {
                     throw IllegalStateException("Catalogue request returned HTTP $recordCode but no confirmation was received. Please refresh Library before retrying.")
                 }
-                Result(true, "Uploaded successfully. It is now available in ELIX Radio.")
+                Result(true, "Uploaded successfully. It is now available in ELIX Radio.", path)
             } catch (e: Exception) {
                 Result(false, e.message ?: "Upload failed.")
             }
@@ -206,6 +206,32 @@ object UploadApi {
                 if (code !in 200..299) throw IllegalStateException("Storage HTTP " + code + ": " + body)
                 Pair(true, BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-public/" + Uri.encode(path, "/"))
             } catch (e: Exception) { Pair(false, e.message ?: "Image upload failed.") }
+            callback(result)
+        }
+    }
+
+    fun uploadThumbnailBytes(context: Context, bytes: ByteArray, userId: String, callback: (Pair<Boolean, String>) -> Unit) {
+        thread {
+            val result = try {
+                val token = AuthApi.accessToken(context)
+                require(token.isNotBlank() && bytes.isNotEmpty()) { "Could not prepare the thumbnail." }
+                val path = userId + "/thumb-" + UUID.randomUUID() + ".jpg"
+                val endpoint = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/elix-public/" + Uri.encode(path, "/")
+                val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"; connectTimeout = 20000; readTimeout = 30000; doOutput = true
+                    setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
+                    setRequestProperty("Authorization", "Bearer " + token)
+                    setRequestProperty("Content-Type", "image/jpeg")
+                    setRequestProperty("x-upsert", "true")
+                    setFixedLengthStreamingMode(bytes.size)
+                    outputStream.use { it.write(bytes) }
+                }
+                val code = connection.responseCode
+                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                connection.disconnect()
+                if (code !in 200..299) throw IllegalStateException("Thumbnail storage HTTP " + code + ": " + body)
+                Pair(true, BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-public/" + Uri.encode(path, "/"))
+            } catch (e: Exception) { Pair(false, e.message ?: "Thumbnail upload failed.") }
             callback(result)
         }
     }
