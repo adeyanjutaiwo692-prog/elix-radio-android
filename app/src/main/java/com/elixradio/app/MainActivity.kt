@@ -150,8 +150,21 @@ class MainActivity : Activity() {
 
     private fun showMinistries() {
         base("Ministries", "Our broadcast partners", "MINISTRY CHANNELS", "Follow ministries and discover their broadcasts.")
-        tile(content, "Glory Realm Global", "Pilot ministry · Minister PAUL AYO · Lagos, Nigeria") { openLive() }
-        tile(content, "Partner ministries", "Approved churches and ministries will have their own live, archive and upcoming programme pages.") { info("Ministry applications and approvals are managed through the ELIX Control Room portal.") }
+        val ministryList = card(content)
+        text(ministryList, "Loading approved ministry channels…", 14, muted, false)
+        SupabaseApi.get("ministries?select=name,city&approved=eq.true&order=name.asc") { rows ->
+            runOnUiThread {
+                ministryList.removeAllViews()
+                if (rows.length() == 0) text(ministryList, "No approved ministry channels have been published yet.", 14, muted, false)
+                for (i in 0 until rows.length()) {
+                    val item = rows.getJSONObject(i)
+                    text(ministryList, item.optString("name"), 17, gold, true)
+                    text(ministryList, item.optString("city", "Nigeria"), 13, muted, false)
+                    space(ministryList, 8)
+                }
+            }
+        }
+        tile(content, "Glory Realm Global live", "Minister PAUL AYO · Pilot broadcast") { openLive() }
     }
 
     private fun showUpcoming() {
