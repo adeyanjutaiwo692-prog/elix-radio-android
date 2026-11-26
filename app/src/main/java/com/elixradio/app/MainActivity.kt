@@ -225,11 +225,7 @@ class MainActivity : Activity() {
                 FeedEngagementApi.loadSignals(this@MainActivity) { signals ->
                     runOnUiThread {
                         if (isFinishing || homeFeedFrame !== frame) return@runOnUiThread
-                        homeFeedItems.sortByDescending { item ->
-                            val id = item.optString("id")
-                            val kind = item.optString("kind", "other")
-                            (signals.itemScores[id] ?: 0.0) + (signals.categoryScores[kind] ?: 0.0) * 0.35
-                        }
+                        rankFeedForDiscovery(signals)
                         displayHomeFeedItem()
                     }
                 }
@@ -238,6 +234,44 @@ class MainActivity : Activity() {
     }
 
     private var feedTouchY = 0f
+
+    // Personal relevance is balanced with category variety so the FYP does not
+    // become a wall of one content type after a few strong engagement signals.
+    private fun rankFeedForDiscovery(signals: FeedEngagementApi.Signals) {
+        val remaining = homeFeedItems.withIndex().toMutableList()
+        val ranked = ArrayList<JSONObject>(remaining.size)
+        val categoryCounts = mutableMapOf<String, Int>()
+        var previousCategory = ""
+        var sameCategoryRun = 0
+
+        while (remaining.isNotEmpty()) {
+            var bestIndex = 0
+            var bestScore = Double.NEGATIVE_INFINITY
+            for (i in remaining.indices) {
+                val item = remaining[i].value
+                val category = item.optString("kind", "other").ifBlank { "other" }
+                val baseScore = (signals.itemScores[item.optString("id")] ?: 0.0) +
+                    (signals.categoryScores[category] ?: 0.0) * 0.35
+                val varietyBonus = 4.0 / (1.0 + (categoryCounts[category] ?: 0))
+                val repeatPenalty = if (category == previousCategory && sameCategoryRun >= 2) 1000.0 else 0.0
+                val score = baseScore + varietyBonus - repeatPenalty - (i * 0.0001)
+                if (score > bestScore) {
+                    bestScore = score
+                    bestIndex = i
+                }
+            }
+            val chosen = remaining.removeAt(bestIndex).value
+            val chosenCategory = chosen.optString("kind", "other").ifBlank { "other" }
+            if (chosenCategory == previousCategory) sameCategoryRun++ else {
+                previousCategory = chosenCategory
+                sameCategoryRun = 1
+            }
+            categoryCounts[chosenCategory] = (categoryCounts[chosenCategory] ?: 0) + 1
+            ranked.add(chosen)
+        }
+        homeFeedItems.clear()
+        homeFeedItems.addAll(ranked)
+    }
 
     private fun moveFeed(direction: Int) {
         if (homeFeedItems.isEmpty()) return
