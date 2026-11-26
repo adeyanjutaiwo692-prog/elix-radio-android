@@ -1128,125 +1128,114 @@ class MainActivity : Activity() {
     }
 
     private fun showAccount() {
-        base("Account", "Your ELIX profile", "", "")
+        base("Account", "YOUR ELIX PROFILE", "", "")
+        content.setPadding(dp(14), dp(12), dp(14), dp(24))
+        content.setBackgroundColor(Color.WHITE)
         if (!AuthApi.isSignedIn(this)) {
             text(content, "Welcome to ELIX", 25, white, true)
             text(content, "Sign in to manage your profile, publish content and connect with creators.", 14, muted, false)
-            space(content, 18)
             button(content, "CREATE ACCOUNT") { showAuthDialog(true) }
             button(content, "SIGN IN") { showAuthDialog(false) }
             return
         }
         val userId = AuthApi.currentUserId(this)
         val displayName = AuthApi.currentName(this).ifBlank { "ELIX member" }
+        val handle = displayName.lowercase().replace(Regex("[^a-z0-9]+"), ".").trim('.')
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        text(top, displayName.lowercase().replace(" ", "."), 21, white, true)
-        val settings = TextView(this).apply { text = "⚙"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(white); setOnClickListener { editProfileDialog() } }
-        top.addView(settings, LinearLayout.LayoutParams(dp(48), dp(48)))
+        text(top, "elix", 28, Color.BLACK, true)
+        val spacer = View(this); top.addView(spacer, LinearLayout.LayoutParams(0, dp(42), 1f))
+        val add = TextView(this).apply { text = "＋"; textSize = 29f; setTextColor(Color.BLACK); gravity = Gravity.CENTER; setOnClickListener { chooseUploadFile() } }
+        val settings = TextView(this).apply { text = "☰"; textSize = 25f; setTextColor(Color.BLACK); gravity = Gravity.CENTER; setOnClickListener { editProfileDialog() } }
+        top.addView(add, LinearLayout.LayoutParams(dp(42), dp(42))); top.addView(settings, LinearLayout.LayoutParams(dp(42), dp(42)))
         content.addView(top, fullWidth())
-        val profileRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(12), 0, dp(12)) }
-        val avatar = TextView(this).apply {
-            text = displayName.trim().take(1).uppercase(); textSize = 30f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)) }
-        }
+        val handleText = TextView(this).apply { text = handle; textSize = 14f; setTextColor(Color.BLACK); setTypeface(null, Typeface.BOLD) }
+        content.addView(handleText)
+        val profileRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(14), 0, dp(12)) }
         val avatarFrame = FrameLayout(this)
-        avatarFrame.addView(avatar, FrameLayout.LayoutParams(-1, -1))
+        val avatarFallback = TextView(this).apply { text = displayName.take(1).uppercase(); textSize = 28f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(195, 80, 145)) } }
+        avatarFrame.addView(avatarFallback, FrameLayout.LayoutParams(-1,-1))
         val avatarImage = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = GradientDrawable().apply { shape = GradientDrawable.OVAL } }
-        avatarFrame.addView(avatarImage, FrameLayout.LayoutParams(-1, -1))
-        profileRow.addView(avatarFrame, LinearLayout.LayoutParams(dp(84), dp(84)))
+        avatarFrame.addView(avatarImage, FrameLayout.LayoutParams(-1,-1))
+        avatarFrame.setOnClickListener { chooseProfileImage(null) }
+        profileRow.addView(avatarFrame, LinearLayout.LayoutParams(dp(88),dp(88)))
         SupabaseApi.getWithError(this, "profiles?select=avatar_url&id=eq.$userId&limit=1") { rows, _ ->
-            val url = if (rows.length() > 0) rows.getJSONObject(0).optString("avatar_url") else ""
+            val url = if (rows.length()>0) rows.getJSONObject(0).optString("avatar_url") else ""
             if (url.isNotBlank()) loadRemoteImage(url, avatarImage)
         }
         val stats = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; weightSum = 3f }
-        fun stat(value: String, label: String) {
+        fun stat(label: String): TextView {
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-            val number = TextView(this).apply { text = value; textSize = 18f; setTextColor(white); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
-            val caption = TextView(this).apply { text = label; textSize = 11f; setTextColor(muted) }
-            col.addView(number); col.addView(caption); stats.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+            val value = TextView(this).apply { text = "…"; textSize = 19f; setTextColor(Color.BLACK); setTypeface(null, Typeface.BOLD) }
+            val caption = TextView(this).apply { text = label; textSize = 12f; setTextColor(Color.DKGRAY) }
+            col.addView(value); col.addView(caption); stats.addView(col, LinearLayout.LayoutParams(0,-2,1f))
+            return value
         }
-        stat("…", "posts"); stat("…", "followers"); stat("…", "following")
-        profileRow.addView(stats, LinearLayout.LayoutParams(0, -2, 1f))
+        val postCount = stat("posts"); val followerCount = stat("followers"); val followingCount = stat("following")
+        profileRow.addView(stats, LinearLayout.LayoutParams(0,-2,1f))
         content.addView(profileRow, fullWidth())
-        val bio = TextView(this).apply { text = displayName + "\nELIX Christian Media creator"; textSize = 13f; setTextColor(white); typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
-        content.addView(bio, fullWidth())
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        fun action(label: String, callback: () -> Unit) {
-            val b = Button(this).apply {
-                text = label; isAllCaps = false; textSize = 12f; setTextColor(white)
-                background = GradientDrawable().apply { setColor(Color.rgb(0,149,246)); cornerRadius = dp(7).toFloat() }
-                setOnClickListener { callback() }
-            }
-            actions.addView(b, LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(5) })
+        text(content, displayName, 14, Color.BLACK, true)
+        text(content, "ELIX Christian Media creator", 13, Color.DKGRAY, false)
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0,dp(12),0,dp(10)) }
+        fun profileAction(label: String, action: () -> Unit) {
+            val b = Button(this).apply { text=label; isAllCaps=false; textSize=12f; setTextColor(Color.BLACK); background=GradientDrawable().apply { setColor(Color.rgb(239,239,239)); cornerRadius=dp(7).toFloat(); setStroke(dp(1),Color.rgb(225,225,225)) }; setOnClickListener { action() } }
+            actions.addView(b,LinearLayout.LayoutParams(0,dp(40),1f).apply { marginEnd=dp(5) })
         }
-        action("Edit profile") { editProfileDialog() }
-        action("Profile photo") { chooseProfileImage(null) }
-        action("Share profile") {
-            val share = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Find $displayName on ELIX Christian Media Network.") }
-            startActivity(Intent.createChooser(share, "Share ELIX profile"))
+        profileAction("Edit profile") { editProfileDialog() }
+        profileAction("Share profile") {
+            val invite = "elix://invite/$userId"
+            val share = Intent(Intent.ACTION_SEND).apply { type="text/plain"; putExtra(Intent.EXTRA_TEXT,"Join me on ELIX Christian Media Network. My personal invitation link: $invite") }
+            startActivity(Intent.createChooser(share,"Share your ELIX invitation"))
         }
-        action("＋") { chooseUploadFile() }
-        content.addView(actions, fullWidth())
-        space(content, 12)
-        SupabaseApi.getWithError(this, "media_items?select=id&uploaded_by=eq.$userId&status=eq.approved&limit=1000") { posts, _ ->
-            SupabaseApi.getWithError(this, "creator_follower_counts?select=follower_count&creator_id=eq.$userId&limit=1") { followers, _ ->
-                SupabaseApi.getWithError(this, "creator_follows?select=follower_id&creator_id=eq.$userId") { following, _ ->
+        content.addView(actions,fullWidth())
+        SupabaseApi.getWithError(this,"media_items?select=id&uploaded_by=eq.$userId&status=eq.approved&limit=1000") { posts, _ ->
+            SupabaseApi.getWithError(this,"creator_follower_counts?select=follower_count&creator_id=eq.$userId&limit=1") { followers, _ ->
+                SupabaseApi.getWithError(this,"creator_follows?select=creator_id&follower_id=eq.$userId") { following, _ ->
                     runOnUiThread {
-                        if (isFinishing) return@runOnUiThread
-                        (stats.getChildAt(0) as LinearLayout).let { (it.getChildAt(0) as TextView).text = posts.length().toString() }
-                        (stats.getChildAt(1) as LinearLayout).let { (it.getChildAt(0) as TextView).text = if (followers.length() > 0) followers.getJSONObject(0).optLong("follower_count").toString() else "0" }
-                        (stats.getChildAt(2) as LinearLayout).let { (it.getChildAt(0) as TextView).text = following.length().toString() }
+                        postCount.text=posts.length().toString()
+                        followerCount.text=if(followers.length()>0) followers.getJSONObject(0).optLong("follower_count").toString() else "0"
+                        followingCount.text=following.length().toString()
                     }
                 }
             }
         }
-        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        listOf("▦  POSTS", "♧  SAVED", "▤  ABOUT").forEachIndexed { index, label ->
-            val tab = TextView(this).apply { text = label; textSize = 12f; gravity = Gravity.CENTER; setTextColor(if (index == 0) gold else muted); setPadding(0, dp(13), 0, dp(13)); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
-            tabs.addView(tab, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        content.addView(tabs, fullWidth())
-        content.addView(View(this).apply { setBackgroundColor(Color.rgb(225,225,225)) }, LinearLayout.LayoutParams(-1, dp(1)))
-        val grid = android.widget.GridLayout(this).apply { columnCount = 3; useDefaultMargins = false }
-        content.addView(grid, fullWidth())
-        SupabaseApi.getWithError(this, "media_items?select=id,title,description,kind,media_type,file_path,thumbnail_url,status&uploaded_by=eq.$userId&order=created_at.desc&limit=90") { rows, error ->
+        val tabs = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER }
+        val postsTab = TextView(this).apply { text="▦"; textSize=25f; gravity=Gravity.CENTER; setTextColor(Color.BLACK); setPadding(0,dp(10),0,dp(10)) }
+        tabs.addView(postsTab,LinearLayout.LayoutParams(0,dp(46),1f))
+        val aboutTab = TextView(this).apply { text="♙"; textSize=23f; gravity=Gravity.CENTER; setTextColor(Color.GRAY); setPadding(0,dp(10),0,dp(10)); setOnClickListener { info("ELIX creator profile · $displayName") } }
+        tabs.addView(aboutTab,LinearLayout.LayoutParams(0,dp(46),1f))
+        content.addView(tabs,fullWidth())
+        content.addView(View(this).apply { setBackgroundColor(Color.LTGRAY) },LinearLayout.LayoutParams(-1,dp(1)))
+        val grid=android.widget.GridLayout(this).apply { columnCount=3; useDefaultMargins=false }
+        content.addView(grid,fullWidth())
+        SupabaseApi.getWithError(this,"media_items?select=id,title,media_type,file_path,thumbnail_url&uploaded_by=eq.$userId&status=eq.approved&order=created_at.desc&limit=90") { rows,error ->
             runOnUiThread {
                 grid.removeAllViews()
-                if (error != null) { text(content, "Your posts could not load: $error", 12, signalRed, false); return@runOnUiThread }
-                if (rows.length() == 0) {
-                    val empty = TextView(this).apply { text = "＋\nShare your first post"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(dp(20), dp(34), dp(20), dp(34)) }
-                    grid.addView(empty, android.widget.GridLayout.LayoutParams().apply { width = resources.displayMetrics.widthPixels; height = dp(150) })
-                } else {
-                    val width = (resources.displayMetrics.widthPixels - dp(46)) / 3
-                    for (i in 0 until rows.length()) {
-                        val item = rows.getJSONObject(i); val mediaType = item.optString("media_type")
-                        val tile = FrameLayout(this).apply {
-                            setBackgroundColor(Color.rgb(238,240,243))
-                            layoutParams = android.widget.GridLayout.LayoutParams().apply { this.width = width; this.height = width; setMargins(dp(1), dp(1), dp(1), dp(1)) }
-                            setOnClickListener { if (mediaType == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path")) }
-                        }
-                        val label = TextView(this).apply { text = when(mediaType) { "video" -> "▶"; "audio" -> "♫"; "pdf" -> "PDF"; else -> item.optString("title").take(18) }; textSize = if (mediaType == "image") 11f else 30f; gravity = Gravity.CENTER; setTextColor(Color.DKGRAY) }
-                        tile.addView(label, FrameLayout.LayoutParams(-1,-1))
-                        val thumbnail = item.optString("thumbnail_url")
-                        if (thumbnail.isNotBlank() || mediaType == "image") {
-                            val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-                            tile.addView(image, FrameLayout.LayoutParams(-1,-1))
-                            val url = if (thumbnail.isNotBlank()) thumbnail else BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(item.optString("file_path"), "/")
-                            loadRemoteImage(url, image)
-                        }
-                        grid.addView(tile)
+                if(error!=null) { text(content,"Your posts could not load: $error",12,signalRed,false); return@runOnUiThread }
+                val width=(resources.displayMetrics.widthPixels-dp(30))/3
+                if(rows.length()==0) {
+                    val empty=TextView(this).apply { text="＋\nShare your first post"; textSize=14f; gravity=Gravity.CENTER; setTextColor(Color.GRAY); setPadding(dp(12),dp(30),dp(12),dp(30)) }
+                    grid.addView(empty,android.widget.GridLayout.LayoutParams().apply { this.width=width*3; height=dp(150) })
+                }
+                for(i in 0 until rows.length()) {
+                    val item=rows.getJSONObject(i); val kind=item.optString("media_type")
+                    val tile=FrameLayout(this).apply { setBackgroundColor(Color.rgb(238,238,238)); layoutParams=android.widget.GridLayout.LayoutParams().apply { this.width=width; height=width; setMargins(dp(1),dp(1),dp(1),dp(1)) }; setOnClickListener { if(kind=="audio") playAudio(item.optString("title"),item.optString("file_path")) else openMedia(item.optString("file_path"),kind) } }
+                    val preview=ImageView(this).apply { scaleType=ImageView.ScaleType.CENTER_CROP }
+                    tile.addView(preview,FrameLayout.LayoutParams(-1,-1))
+                    val thumb=item.optString("thumbnail_url")
+                    if(thumb.isNotBlank()) loadRemoteImage(thumb,preview)
+                    else if(kind=="image") loadRemoteImage(BuildConfig.SUPABASE_URL.trimEnd('/')+"/storage/v1/object/public/elix-media/"+Uri.encode(item.optString("file_path"),"/"),preview)
+                    else {
+                        val icon=TextView(this).apply { text=if(kind=="video") "▶" else if(kind=="audio") "♫" else "PDF"; textSize=29f; gravity=Gravity.CENTER; setTextColor(Color.DKGRAY) }
+                        tile.addView(icon,FrameLayout.LayoutParams(-1,-1))
                     }
+                    grid.addView(tile)
                 }
             }
         }
-        space(content, 18)
-        text(content, "ACCOUNT TOOLS", 13, muted, true)
-        tile(content, "Discover creators", "Find and follow other ELIX members.") { showCreatorDirectory() }
-        tile(content, "My ministry pages", "Create and manage ministry or public-figure pages.") { showMyPages() }
-        button(content, "＋  UPLOAD CONTENT") { chooseUploadFile() }
-        if (AuthApi.currentRole(this) == "super_admin") button(content, "DEVELOPER DASHBOARD") { showDeveloperDashboard() }
-        button(content, "SIGN OUT") { AuthApi.signOut(this); showWelcome() }
+        space(content,12)
+        button(content,"＋  CREATE A POST") { chooseUploadFile() }
+        button(content,"MY MINISTRY & PAGE ACCOUNTS") { showMyPages() }
+        button(content,"SIGN OUT") { AuthApi.signOut(this); showWelcome() }
     }
 
     private fun showMyPages() {
