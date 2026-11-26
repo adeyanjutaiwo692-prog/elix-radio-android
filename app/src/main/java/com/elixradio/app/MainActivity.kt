@@ -407,15 +407,14 @@ class MainActivity : Activity() {
         fun loadComments() {
             commentList.removeAllViews()
             text(commentList, "Loading comments…", 13, muted, false)
-            SupabaseApi.getWithError(this, "media_comments?select=id,comment_text,created_at,profiles(display_name)&media_id=eq.$mediaId&order=created_at.asc&limit=200") { rows, error ->
+            SupabaseApi.getWithError(this, "media_comments?select=id,comment_text,author_name,created_at&media_id=eq.$mediaId&order=created_at.asc&limit=200") { rows, error ->
                 runOnUiThread {
                     commentList.removeAllViews()
                     if (error != null) text(commentList, "Comments could not be loaded: $error", 12, signalRed, false)
                     else if (rows.length() == 0) text(commentList, "No comments yet. Start the conversation.", 13, muted, false)
                     else for (i in 0 until rows.length()) {
                         val c = rows.getJSONObject(i)
-                        val profile = c.optJSONObject("profiles")
-                        text(commentList, profile?.optString("display_name").orEmpty().ifBlank { "ELIX member" }, 12, gold, true)
+                        text(commentList, c.optString("author_name").ifBlank { "ELIX member" }, 12, gold, true)
                         text(commentList, c.optString("comment_text"), 14, white, false)
                         space(commentList, 8)
                     }
@@ -427,7 +426,7 @@ class MainActivity : Activity() {
             val value = input.text.toString().trim()
             if (value.isBlank()) { input.error = "Write a comment first"; return@setOnClickListener }
             send.isEnabled = false
-            val body = JSONObject().put("media_id", mediaId).put("user_id", AuthApi.currentUserId(this)).put("comment_text", value)
+            val body = JSONObject().put("media_id", mediaId).put("user_id", AuthApi.currentUserId(this)).put("author_name", AuthApi.currentName(this).ifBlank { "ELIX member" }).put("comment_text", value)
             SupabaseApi.postWithError(this, "media_comments", body) { e ->
                 runOnUiThread {
                     send.isEnabled = true
