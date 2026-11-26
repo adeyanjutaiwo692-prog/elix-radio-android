@@ -372,7 +372,29 @@ class MainActivity : Activity() {
         val pageId = page.optString("id")
         selectedPageId = pageId
         base("Account", "Page account", page.optString("name"), "Your ministry's independent publishing and management space.")
+        val pageHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, dp(16)) }
+        val pageAvatarFrame = FrameLayout(this)
+        val pageAvatarFallback = TextView(this).apply {
+            text = page.optString("name").take(1).uppercase()
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(130, 70, 160)) }
+        }
+        pageAvatarFrame.addView(pageAvatarFallback, FrameLayout.LayoutParams(-1, -1))
+        val pageAvatar = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = GradientDrawable().apply { shape = GradientDrawable.OVAL } }
+        pageAvatarFrame.addView(pageAvatar, FrameLayout.LayoutParams(-1, -1))
+        if (page.optString("logo_url").isNotBlank()) loadRemoteImage(page.optString("logo_url"), pageAvatar)
+        pageHeader.addView(pageAvatarFrame, LinearLayout.LayoutParams(dp(84), dp(84)))
+        val pageIdentity = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, 0, 0) }
+        text(pageIdentity, page.optString("name"), 19, white, true)
+        text(pageIdentity, page.optString("page_type").replace("_", " ").uppercase(), 11, gold, true)
+        text(pageIdentity, page.optString("city"), 12, muted, false)
+        pageHeader.addView(pageIdentity, LinearLayout.LayoutParams(0, -2, 1f))
+        pageHeader.setOnClickListener { chooseProfileImage(pageId) }
+        content.addView(pageHeader, fullWidth())
         button(content, "CHANGE PAGE PROFILE PICTURE") { chooseProfileImage(pageId) }
+        button(content, "EDIT PAGE PROFILE") { editPageDialog(page) }
         text(content, "PAGE CONTENT STUDIO", 13, gold, true)
         tile(content, "Audio messages & podcasts", "Upload sermons, worship, teaching, interviews and podcasts.") { selectedPageId = pageId; selectedUploadType = "audio"; chooseUploadFile() }
         tile(content, "Videos & short clips", "Upload sermons, testimonies, teaching, event videos and shorts.") { selectedPageId = pageId; selectedUploadType = "video"; chooseUploadFile() }
@@ -1283,7 +1305,7 @@ class MainActivity : Activity() {
     private fun showMyPages() {
         base("Account", "Your channels", "MY PAGES", "Manage your ministry and public-figure profiles.")
         val pages = card(content)
-        SupabaseApi.getWithError(this, "ministries?select=id,name,description,city,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc") { rows, error ->
+        SupabaseApi.getWithError(this, "ministries?select=id,name,description,city,page_type,approved,logo_url&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc") { rows, error ->
             runOnUiThread {
                 pages.removeAllViews()
                 if (error != null) text(pages, "Could not load pages: $error", 12, signalRed, false)
