@@ -283,7 +283,7 @@ class MainActivity : Activity() {
             text(content, "Signed in as " + AuthApi.currentName(this).ifBlank { "ELIX listener" }, 16, gold, true)
             text(content, "Account role: " + AuthApi.currentRole(this).replace('_', ' ').uppercase(), 12, muted, true)
             AuthApi.currentRoleError(this).takeIf { it.isNotBlank() }?.let {
-                text(content, "Role sync diagnostic: $it", 11, red, false)
+                text(content, "Role sync diagnostic: $it", 11, muted, false)
             }
             space(content, 12)
             if (AuthApi.currentRole(this) == "super_admin") {
