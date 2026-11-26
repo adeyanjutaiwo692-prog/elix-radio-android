@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.media.MediaPlayer
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -21,6 +22,7 @@ import android.widget.FrameLayout
 import android.graphics.BitmapFactory
 import org.json.JSONObject
 import java.net.URL
+import java.io.ByteArrayOutputStream
 
 class MainActivity : Activity() {
     private val bg = Color.rgb(250, 250, 250)
@@ -953,6 +955,25 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             if (result.ok) {
                                 info(result.message)
+                                if (selectedUploadType == "video" && !result.filePath.isNullOrBlank()) {
+                                    Thread {
+                                        try {
+                                            val retriever = MediaMetadataRetriever()
+                                            retriever.setDataSource(this, uri)
+                                            val frame = retriever.getFrameAtTime(1000000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                            retriever.release()
+                                            if (frame != null) {
+                                                val output = ByteArrayOutputStream()
+                                                frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, output)
+                                                UploadApi.uploadThumbnailBytes(this, output.toByteArray(), AuthApi.currentUserId(this)) { thumbnail ->
+                                                    if (thumbnail.first) SupabaseApi.patchWithError(this,
+                                                        "media_items?uploaded_by=eq." + AuthApi.currentUserId(this) + "&file_path=eq." + Uri.encode(result.filePath!!),
+                                                        JSONObject().put("thumbnail_url", thumbnail.second)) { _ -> }
+                                                }
+                                            }
+                                        } catch (_: Exception) { }
+                                    }.start()
+                                }
                                 showAccount()
                             } else {
                                 android.app.AlertDialog.Builder(this)
