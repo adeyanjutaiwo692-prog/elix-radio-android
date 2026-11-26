@@ -9,6 +9,28 @@ object SupabaseApi {
     private const val BASE = "https://sumqnvpvtqpbbbytmbvk.supabase.co/rest/v1/"
     private const val KEY = "sb_publishable_-H-6950SAms-43NMmbM0xQ_rTz-lGl0"
 
+    fun getWithError(context: android.content.Context, tableQuery: String, callback: (JSONArray, String?) -> Unit) {
+        thread {
+            var rows = JSONArray()
+            var error: String? = null
+            try {
+                val token = AuthApi.accessToken(context).ifBlank { KEY }
+                val connection = URL(BASE + tableQuery).openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.setRequestProperty("apikey", KEY)
+                connection.setRequestProperty("Authorization", "Bearer " + token)
+                connection.setRequestProperty("Accept", "application/json")
+                val code = connection.responseCode
+                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code in 200..299) rows = JSONArray(body) else error = "HTTP $code: $body"
+                connection.disconnect()
+            } catch (e: Exception) { error = e.message ?: "Could not load catalogue." }
+            callback(rows, error)
+        }
+    }
+
     fun get(tableQuery: String, callback: (JSONArray) -> Unit) {
         thread {
             var result = JSONArray()
