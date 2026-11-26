@@ -928,7 +928,7 @@ class MainActivity : Activity() {
                         val item = rows.getJSONObject(i); val mediaType = item.optString("media_type")
                         val tile = FrameLayout(this).apply {
                             setBackgroundColor(Color.rgb(238,240,243))
-                            layoutParams = android.widget.GridLayout.LayoutParams().apply { width = width; height = width; setMargins(dp(1), dp(1), dp(1), dp(1)) }
+                            layoutParams = android.widget.GridLayout.LayoutParams().apply { this.width = width; this.height = width; setMargins(dp(1), dp(1), dp(1), dp(1)) }
                             setOnClickListener { if (mediaType == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path")) }
                         }
                         val label = TextView(this).apply { text = when(mediaType) { "video" -> "▶"; "audio" -> "♫"; "pdf" -> "PDF"; else -> item.optString("title").take(18) }; textSize = if (mediaType == "image") 11f else 30f; gravity = Gravity.CENTER; setTextColor(Color.DKGRAY) }
