@@ -174,4 +174,28 @@ object UploadApi {
             callback(result)
         }
     }
+
+    fun deleteStoredFile(context: Context, path: String, callback: (String?) -> Unit) {
+        thread {
+            var error: String? = null
+            try {
+                val token = AuthApi.accessToken(context)
+                require(token.isNotBlank()) { "Please sign in to delete this upload." }
+                val endpoint = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/elix-media/" + Uri.encode(path, "/")
+                val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "DELETE"
+                    connectTimeout = 20000
+                    readTimeout = 20000
+                    setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
+                    setRequestProperty("Authorization", "Bearer $token")
+                }
+                val code = connection.responseCode
+                val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) error = "Storage HTTP $code: $response"
+                connection.disconnect()
+            } catch (e: Exception) { error = e.message ?: "Could not delete stored file." }
+            callback(error)
+        }
+    }
+
 }
