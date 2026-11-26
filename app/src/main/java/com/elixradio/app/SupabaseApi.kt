@@ -31,6 +31,52 @@ object SupabaseApi {
         }
     }
 
+    fun postWithError(context: android.content.Context, table: String, body: org.json.JSONObject, callback: (String?) -> Unit) {
+        thread {
+            var error: String? = null
+            try {
+                val connection = URL(BASE + table).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+                connection.setRequestProperty("apikey", KEY)
+                connection.setRequestProperty("Authorization", "Bearer " + AuthApi.accessToken(context))
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.setRequestProperty("Prefer", "return=minimal")
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) error = "HTTP $code: $response"
+                connection.disconnect()
+            } catch (e: Exception) { error = e.message ?: "Request failed." }
+            callback(error)
+        }
+    }
+
+    fun patchWithError(context: android.content.Context, tableQuery: String, body: org.json.JSONObject, callback: (String?) -> Unit) {
+        thread {
+            var error: String? = null
+            try {
+                val connection = URL(BASE + tableQuery).openConnection() as HttpURLConnection
+                connection.requestMethod = "PATCH"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+                connection.setRequestProperty("apikey", KEY)
+                connection.setRequestProperty("Authorization", "Bearer " + AuthApi.accessToken(context))
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.setRequestProperty("Prefer", "return=minimal")
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) error = "HTTP $code: $response"
+                connection.disconnect()
+            } catch (e: Exception) { error = e.message ?: "Request failed." }
+            callback(error)
+        }
+    }
+
     fun get(tableQuery: String, callback: (JSONArray) -> Unit) {
         thread {
             var result = JSONArray()
