@@ -84,7 +84,13 @@ object AuthApi {
         prefs.edit().clear().apply()
     }
 
-    fun accessToken(context: Context): String =\n        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("access_token", "").orEmpty()\n\n    fun currentUserId(context: Context): String =\n        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("user_id", "").orEmpty()\n\n    fun currentName(context: Context): String =
+    fun accessToken(context: Context): String =
+        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("access_token", "").orEmpty()
+
+    fun currentUserId(context: Context): String =
+        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("user_id", "").orEmpty()
+
+    fun currentName(context: Context): String =
         context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("display_name", "").orEmpty()
 
     fun isSignedIn(context: Context): Boolean =
