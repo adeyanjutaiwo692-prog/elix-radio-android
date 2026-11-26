@@ -387,6 +387,19 @@ class MainActivity : Activity() {
         } catch (e: Exception) { info("Audio playback failed: " + (e.message ?: "unknown error")); stopAudio() }
     }
 
+    private fun playStream(url: String, title: String) {
+        if (url.isBlank()) { info("This live station has no playback URL."); return }
+        stopAudio()
+        val player = MediaPlayer()
+        mediaPlayer = player
+        try {
+            player.setDataSource(url)
+            player.setOnPreparedListener { it.start(); info("Listening live: " + title) }
+            player.setOnErrorListener { _, _, _ -> info("Live radio playback failed."); stopAudio(); true }
+            player.prepareAsync()
+        } catch (e: Exception) { info("Live radio playback failed: " + (e.message ?: "unknown error")); stopAudio() }
+    }
+
     private fun stopAudio() {
         try { mediaPlayer?.stop() } catch (_: Exception) { }
         try { mediaPlayer?.release() } catch (_: Exception) { }
