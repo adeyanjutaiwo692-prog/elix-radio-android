@@ -359,7 +359,7 @@ class MainActivity : Activity() {
         SupabaseApi.getWithError(this, "programmes?select=title,description,starts_at&ministry_id=eq.$pageId&status=eq.scheduled&order=starts_at.asc&limit=50") { rows, e -> runOnUiThread { programmes.removeAllViews(); if (e != null || rows.length() == 0) text(programmes, "No upcoming programmes announced.", 13, muted, false) else for (i in 0 until rows.length()) { val x=rows.getJSONObject(i); text(programmes,x.optString("title"),15,gold,true); text(programmes,x.optString("starts_at").replace("T"," "),12,muted,false); text(programmes,x.optString("description"),13,muted,false) } } }
         listOf("BOOKS" to "pdf", "AUDIO MESSAGES" to "audio", "SHORTS & VIDEOS" to "video", "IMAGES" to "image").forEach { (heading, type) ->
             text(content, heading, 16, white, true); val section = card(content)
-            SupabaseApi.getWithError(this, "media_items?select=id,title,kind,media_type,file_path&ministry_id=eq.$pageId&status=eq.approved&media_type=eq.$type&order=created_at.desc&limit=40") { rows, e -> runOnUiThread { section.removeAllViews(); if (e != null || rows.length() == 0) text(section, "Nothing published here yet.", 13, muted, false) else for (i in 0 until rows.length()) { val x=rows.getJSONObject(i); val t=x.optString("title"); text(section,t,15,gold,true); text(section,x.optString("kind").replace("_"," ").uppercase(),11,muted,false); button(section,if(type=="audio") "▶ PLAY AUDIO" else "OPEN") { if(type=="audio") playAudio(t,x.optString("file_path")) else openMedia(x.optString("file_path")) } } } }
+            SupabaseApi.getWithError(this, "media_items?select=id,title,kind,media_type,file_path&ministry_id=eq.$pageId&status=eq.approved&media_type=eq.$type&order=created_at.desc&limit=40") { rows, e -> runOnUiThread { section.removeAllViews(); if (e != null || rows.length() == 0) text(section, "Nothing published here yet.", 13, muted, false) else for (i in 0 until rows.length()) { val x=rows.getJSONObject(i); val t=x.optString("title"); text(section,t,15,gold,true); text(section,x.optString("kind").replace("_"," ").uppercase(),11,muted,false); button(section,if(type=="audio") "▶ PLAY AUDIO" else "OPEN") { if(type=="audio") playAudio(t,x.optString("file_path")) else openMedia(x.optString("file_path"),type) } } } }
         }
         text(content, "LIVE MESSAGES", 16, white, true); tile(content, "Live broadcasts", "See authorised live radio and video sessions.") { showBroadcasts() }
         button(content, "BACK TO PAGES") { showHome() }
@@ -514,7 +514,7 @@ class MainActivity : Activity() {
         content.setPadding(0, 0, 0, 0)
         setNav("Discover")
         val height = -1
-        val frame = FrameLayout(this).apply { setBackgroundColor(Color.WHITE) }
+        val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         homeFeedFrame = frame
         val video = VideoView(this)
         homeVideo = video
@@ -542,7 +542,7 @@ class MainActivity : Activity() {
         overlay.addView(brand)
         val spacer = View(this)
         overlay.addView(spacer, LinearLayout.LayoutParams(1, 0, 1f))
-        val category = TextView(this).apply { textSize = 12f; setTextColor(Color.rgb(65, 160, 255)); setTypeface(null, Typeface.BOLD) }
+        val category = TextView(this).apply { textSize = 12f; setTextColor(Color.rgb(255, 45, 85)); setTypeface(null, Typeface.BOLD) }
         homeFeedCategory = category
         overlay.addView(category)
         val title = TextView(this).apply { textSize = 21f; setTextColor(white); setTypeface(null, Typeface.BOLD); setPadding(0, dp(5), 0, dp(8)) }
@@ -1020,10 +1020,32 @@ class MainActivity : Activity() {
         mediaPlayer = null
     }
 
-    private fun openMedia(path: String) {
+    private fun openMedia(path: String, mediaType: String = "video") {
+        if (path.isBlank()) { info("This upload has no file path."); return }
         val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
-        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-        catch (_: Exception) { info("Could not open this file.") }
+        when (mediaType) {
+            "video" -> {
+                val player = VideoView(this)
+                val box = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); addView(player, FrameLayout.LayoutParams(-1, dp(260), Gravity.CENTER)) }
+                val dialog = android.app.AlertDialog.Builder(this).setView(box).setNegativeButton("Close") { _, _ -> player.stopPlayback() }.create()
+                player.setVideoURI(Uri.parse(url))
+                player.setOnPreparedListener { it.isLooping = false; player.start() }
+                player.setOnErrorListener { _, _, _ -> info("This video could not be played."); dialog.dismiss(); true }
+                dialog.setOnDismissListener { player.stopPlayback() }
+                dialog.show()
+            }
+            "image" -> {
+                val image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; setBackgroundColor(Color.BLACK) }
+                val dialog = android.app.AlertDialog.Builder(this).setView(image).setPositiveButton("Close", null).create()
+                loadRemoteImage(url, image)
+                dialog.show()
+            }
+            "pdf" -> {
+                val web = android.webkit.WebView(this).apply { settings.javaScriptEnabled = false; setBackgroundColor(Color.WHITE); loadUrl("https://docs.google.com/gview?embedded=1&url=" + Uri.encode(url)) }
+                android.app.AlertDialog.Builder(this).setTitle("ELIX Book Reader").setView(web).setPositiveButton("Close", null).show()
+            }
+            else -> info("This media format is not supported yet.")
+        }
     }
 
     private fun chooseUploadFile() {
@@ -1320,7 +1342,7 @@ class MainActivity : Activity() {
                     text(uploads, item.optString("title"), 15, gold, true)
                     text(uploads, item.optString("media_type").uppercase() + " • " + item.optString("kind").uppercase(), 11, muted, false)
                     button(uploads, if (item.optString("media_type") == "audio") "▶ PLAY AUDIO" else "OPEN CONTENT") {
-                        if (item.optString("media_type") == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path"))
+                        if (item.optString("media_type") == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path"), mediaType)
                     }
                 }
             }
