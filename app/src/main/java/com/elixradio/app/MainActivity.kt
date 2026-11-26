@@ -101,7 +101,10 @@ class MainActivity : Activity() {
     }
 
     private fun base(active: String, eyebrow: String, title: String, subtitle: String) {
+        try { homeVideo?.stopPlayback() } catch (_: Exception) { }
+        stopAudio()
         content.removeAllViews()
+        content.setPadding(dp(20), dp(24), dp(20), dp(28))
         setNav(active)
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
