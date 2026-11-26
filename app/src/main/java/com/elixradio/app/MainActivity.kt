@@ -158,18 +158,146 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
-        base("Home", "Discover Christian voices", "MINISTRIES & PAGES", "Find ministries and Christian public figures. Open a page to explore their content and programmes.")
-        if (AuthApi.isSignedIn(this)) button(content, "＋  CREATE A PAGE") { createPageDialog() }
-        val list = card(content); text(list, "Loading pages…", 13, muted, false)
-        SupabaseApi.getWithError(this, "ministries?select=id,name,city,page_type,description,owner_id&or=(approved.eq.true,owner_id.eq.${AuthApi.currentUserId(this)})&order=name.asc&limit=200") { rows, error ->
-            runOnUiThread { list.removeAllViews();
-                if (error != null) text(list, error, 12, signalRed, false)
-                else if (rows.length() == 0) text(list, "No public pages yet. Create an account and submit the first page.", 14, muted, false)
-                else for (i in 0 until rows.length()) { val p = rows.getJSONObject(i); tile(list, p.optString("name"), p.optString("page_type").replace("_"," ").uppercase() + " • " + p.optString("city","Nigeria")) { showCreatorPage(p.optString("id")) } }
+        base("Home", "THE ELIX COMMUNITY", "Find your people.", "Discover ministries, churches, Christian voices and organisations in one place.")
+
+        val topActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val countLabel = TextView(this).apply { text = "MINISTRY & CREATOR DIRECTORY"; textSize = 11f; letterSpacing = 0.08f; setTextColor(muted); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD) }
+        topActions.addView(countLabel, LinearLayout.LayoutParams(0, dp(42), 1f))
+        if (AuthApi.isSignedIn(this)) {
+            val create = TextView(this).apply {
+                text = "＋ Create page"; textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                background = GradientDrawable().apply { setColor(Color.rgb(0,149,246)); cornerRadius = dp(22).toFloat() }
+                setOnClickListener { createPageDialog() }
+            }
+            topActions.addView(create)
+        }
+        content.addView(topActions, fullWidth())
+
+        val search = android.widget.EditText(this).apply {
+            hint = "Search ministries, churches, preachers…"
+            textSize = 14f; singleLine = true; setTextColor(white); setHintTextColor(muted)
+            setPadding(dp(16), 0, dp(16), 0)
+            background = GradientDrawable().apply { setColor(panel); cornerRadius = dp(15).toFloat(); setStroke(dp(1), Color.rgb(225,225,225)) }
+            compoundDrawablePadding = dp(8)
+        }
+        val searchParams = fullWidth().apply { height = dp(52); topMargin = dp(10); bottomMargin = dp(12) }
+        content.addView(search, searchParams)
+
+        val filters = listOf("All", "Ministries", "Churches", "Organisations", "Preachers", "Authors", "Artists")
+        var selectedFilter = "All"
+        val chipScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipToPadding = false }
+        val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        chipScroll.addView(chipRow)
+        content.addView(chipScroll, fullWidth())
+
+        text(content, "DISCOVER CHRISTIAN COMMUNITIES", 15, white, true)
+        space(content, 5)
+        text(content, "Follow a page to keep its messages, videos and programmes close.", 12, muted, false)
+        space(content, 12)
+        val resultsTitle = TextView(this).apply { text = "ALL PAGES"; textSize = 11f; letterSpacing = 0.08f; setTextColor(gold); typeface = Typeface.DEFAULT_BOLD }
+        content.addView(resultsTitle, fullWidth())
+        space(content, 8)
+        val directory = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(directory, fullWidth())
+        val allPages = mutableListOf<JSONObject>()
+
+        fun matchesType(page: JSONObject, filter: String): Boolean {
+            val type = page.optString("page_type").lowercase()
+            return when (filter) {
+                "Ministries" -> type == "ministry"
+                "Churches" -> type == "church"
+                "Organisations" -> type == "organisation"
+                "Preachers" -> type == "public_figure"
+                "Authors" -> type == "author"
+                "Artists" -> type == "artist"
+                else -> true
             }
         }
-        text(content, "DISCOVER SOMETHING NEW", 16, white, true)
-        tile(content, "Discover videos, audio and images", "Swipe through autoplaying Christian content.") { showDiscover() }
+        fun renderDirectory() {
+            directory.removeAllViews()
+            val term = search.text.toString().trim().lowercase()
+            val filtered = allPages.filter { p ->
+                matchesType(p, selectedFilter) &&
+                    (term.isBlank() || listOf(p.optString("name"), p.optString("description"), p.optString("city"), p.optString("page_type")).any { it.lowercase().contains(term) })
+            }
+            resultsTitle.text = if (selectedFilter == "All") "ALL PAGES · ${filtered.size}" else "${selectedFilter.uppercase()} · ${filtered.size}"
+            if (filtered.isEmpty()) {
+                val empty = card(directory)
+                text(empty, if (allPages.isEmpty()) "No pages have joined ELIX yet." else "No pages match your search.", 15, white, true)
+                text(empty, "Try another name or category, or create a page for your ministry.", 12, muted, false)
+                if (AuthApi.isSignedIn(this)) button(empty, "＋ CREATE A PAGE") { createPageDialog() }
+                return
+            }
+            filtered.forEachIndexed { index, p ->
+                val pageId = p.optString("id")
+                val name = p.optString("name").ifBlank { "ELIX Page" }
+                val type = p.optString("page_type").replace("_", " ").replaceFirstChar { it.uppercase() }
+                val city = p.optString("city").ifBlank { "Online" }
+                val item = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(13), dp(13), dp(13), dp(13))
+                    background = GradientDrawable().apply { setColor(panel); cornerRadius = dp(17).toFloat(); setStroke(dp(1), Color.rgb(232,232,232)) }
+                    isClickable = true; isFocusable = true
+                    setOnClickListener { showCreatorPage(pageId) }
+                }
+                val avatarFrame = FrameLayout(this)
+                val fallback = TextView(this).apply {
+                    text = name.trim().take(1).uppercase(); textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+                    typeface = Typeface.DEFAULT_BOLD
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)) }
+                }
+                avatarFrame.addView(fallback, FrameLayout.LayoutParams(-1,-1))
+                val avatar = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = GradientDrawable().apply { shape = GradientDrawable.OVAL } }
+                avatarFrame.addView(avatar, FrameLayout.LayoutParams(-1,-1))
+                if (p.optString("logo_url").isNotBlank()) loadRemoteImage(p.optString("logo_url"), avatar)
+                item.addView(avatarFrame, LinearLayout.LayoutParams(dp(58),dp(58)))
+                val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12),0,dp(8),0) }
+                val title = TextView(this).apply { text = name; textSize = 15f; setTextColor(white); typeface = Typeface.create("sans-serif-medium",Typeface.BOLD); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+                val subtitle = TextView(this).apply { text = type + "  ·  " + city; textSize = 11f; setTextColor(gold); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+                val description = TextView(this).apply { text = p.optString("description").ifBlank { "Explore messages, videos and updates." }; textSize = 12f; setTextColor(muted); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
+                details.addView(title); details.addView(subtitle); details.addView(description)
+                item.addView(details, LinearLayout.LayoutParams(0,-2,1f))
+                val arrow = TextView(this).apply { text = "›"; textSize = 30f; setTextColor(muted); gravity = Gravity.CENTER }
+                item.addView(arrow, LinearLayout.LayoutParams(dp(22),dp(48)))
+                val params = fullWidth().apply { bottomMargin = dp(9) }
+                directory.addView(item,params)
+            }
+        }
+        fun renderChips() {
+            chipRow.removeAllViews()
+            filters.forEach { filter ->
+                val active = filter == selectedFilter
+                val chip = TextView(this).apply {
+                    text = filter; textSize = 12f; gravity = Gravity.CENTER
+                    setPadding(dp(15),dp(9),dp(15),dp(9))
+                    setTextColor(if (active) Color.WHITE else muted)
+                    background = GradientDrawable().apply { setColor(if (active) Color.rgb(0,149,246) else panel); cornerRadius = dp(22).toFloat(); if (!active) setStroke(dp(1),Color.rgb(225,225,225)) }
+                    setOnClickListener { selectedFilter = filter; renderChips(); renderDirectory() }
+                }
+                val params = LinearLayout.LayoutParams(-2,dp(38)).apply { marginEnd = dp(8) }
+                chipRow.addView(chip,params)
+            }
+        }
+        renderChips()
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderDirectory() }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        text(directory, "Loading pages…", 13, muted, false)
+        SupabaseApi.getWithError(this, "ministries?select=id,name,city,page_type,description,owner_id,logo_url&or=(approved.eq.true,owner_id.eq.${AuthApi.currentUserId(this)})&order=name.asc&limit=300") { rows, error ->
+            runOnUiThread {
+                if (error != null) {
+                    directory.removeAllViews()
+                    text(directory, "The directory could not load: $error", 12, signalRed, false)
+                } else {
+                    allPages.clear()
+                    for (i in 0 until rows.length()) allPages.add(rows.getJSONObject(i))
+                    renderDirectory()
+                }
+            }
+        }
     }
 
     private fun showExploreHub() {
