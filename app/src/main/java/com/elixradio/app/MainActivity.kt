@@ -235,6 +235,7 @@ class MainActivity : Activity() {
         val pageId = page.optString("id")
         selectedPageId = pageId
         base("Account", "Page account", page.optString("name"), "Your ministry's independent publishing and management space.")
+        button(content, "CHANGE PAGE PROFILE PICTURE") { chooseProfileImage(pageId) }
         text(content, "PAGE CONTENT STUDIO", 13, gold, true)
         tile(content, "Audio messages & podcasts", "Upload sermons, worship, teaching, interviews and podcasts.") { selectedPageId = pageId; selectedUploadType = "audio"; chooseUploadFile() }
         tile(content, "Videos & short clips", "Upload sermons, testimonies, teaching, event videos and shorts.") { selectedPageId = pageId; selectedUploadType = "video"; chooseUploadFile() }
@@ -292,7 +293,7 @@ class MainActivity : Activity() {
                 if (n.isBlank()) { name.error = "Enter a page name"; return@setOnClickListener }
                 val slug = n.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-') + "-" + System.currentTimeMillis().toString().takeLast(6)
                 val kind = when (type.selectedItemPosition) { 1 -> "church"; 2 -> "organisation"; 3 -> "public_figure"; 4 -> "author"; 5 -> "artist"; else -> "ministry" }
-                val data = JSONObject().put("name", n).put("slug", slug).put("description", desc.text.toString().trim()).put("city", city.text.toString().trim()).put("page_type", kind).put("owner_id", AuthApi.currentUserId(this)).put("approved", false)
+                val data = JSONObject().put("name", n).put("slug", slug).put("description", desc.text.toString().trim()).put("city", city.text.toString().trim()).put("page_type", kind).put("owner_id", AuthApi.currentUserId(this)).put("approved", true)
                 dialog.getButton(-1).isEnabled = false
                 SupabaseApi.postWithError(this, "ministries", data) { error ->
                     runOnUiThread {
@@ -303,6 +304,19 @@ class MainActivity : Activity() {
             }
         }
         dialog.show()
+    }
+
+    private fun chooseProfileImage(pageId: String?) {
+        if (!AuthApi.isSignedIn(this)) { info("Sign in first."); return }
+        imageTargetPageId = pageId
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }
+        startActivityForResult(intent, if (pageId.isNullOrBlank()) profileImageRequestCode else pageImageRequestCode)
+    }
+
+    private fun loadRemoteImage(url: String, target: ImageView) {
+        Thread {
+            try { val bitmap = URL(url).openStream().use { BitmapFactory.decodeStream(it) }; runOnUiThread { if (bitmap != null && target.parent != null) target.setImageBitmap(bitmap) } } catch (_: Exception) { }
+        }.start()
     }
 
     private fun editProfileDialog() {
@@ -403,13 +417,20 @@ class MainActivity : Activity() {
         val position = TextView(this).apply { text = "Loading your feed…"; textSize = 12f; setTextColor(muted) }
         homeFeedPosition = position
         overlay.addView(position)
+        val playback = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(8), dp(5), dp(8), dp(5)); background = GradientDrawable().apply { setColor(0x66000000); cornerRadius = dp(22).toFloat() } }
+        val backSeek = Button(this).apply { text = "−10s"; isAllCaps = false; setOnClickListener { seekFeed(-10000) } }
+        val pausePlay = Button(this).apply { text = "Ⅱ  PAUSE"; isAllCaps = false; setOnClickListener { toggleFeedPlayback() } }
+        val forwardSeek = Button(this).apply { text = "+10s"; isAllCaps = false; setOnClickListener { seekFeed(10000) } }
+        feedPlayButton = pausePlay
+        playback.addView(backSeek); playback.addView(pausePlay); playback.addView(forwardSeek)
+        overlay.addView(playback, LinearLayout.LayoutParams(-1, dp(48)))
         val actionRail = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(5), dp(8), dp(5), dp(8))
             background = GradientDrawable().apply { setColor(0x55000000); cornerRadius = dp(18).toFloat() }
         }
-        fun railAction(symbol: String, label: String, action: () -> Unit) {
+        fun railAction(symbol: String, label: String, action: () -> Unit): TextView {
             val item = TextView(this).apply {
                 text = "$symbol\n$label"
                 gravity = Gravity.CENTER
@@ -420,19 +441,14 @@ class MainActivity : Activity() {
                 setOnClickListener { action() }
             }
             actionRail.addView(item, LinearLayout.LayoutParams(dp(62), dp(58)))
+            return item
         }
         railAction("＋", "FOLLOW") { followCurrentCreator() }
-        railAction("♡", "LIKE") {
-            val item = homeFeedItems.getOrNull(homeFeedIndex)
-            if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "like"); info("Liked") }
-        }
-        railAction("▣", "SAVE") {
-            val item = homeFeedItems.getOrNull(homeFeedIndex)
-            if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "save"); info("Saved to your library") }
-        }
-        railAction("↗", "SHARE") { shareCurrentFeedItem() }
+        val likeAction = railAction("♡", "0") { val item = homeFeedItems.getOrNull(homeFeedIndex); if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "like"); info("Liked"); refreshFeedActionCounts(item) } }
+        val commentAction = railAction("▢", "0") { openCommentsForCurrentItem() }
+        val shareAction = railAction("↗", "0") { shareCurrentFeedItem() }
         railAction("★", "SUBSCRIBE") { subscribeCurrentCreator() }
-        railAction("▤", "COMMENTS") { openCommentsForCurrentItem() }
+        homeFeedFrame?.tag = listOf(likeAction, commentAction, shareAction)
         val railParams = FrameLayout.LayoutParams(dp(70), -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL)
         railParams.rightMargin = dp(8)
         frame.addView(actionRail, railParams)
@@ -572,6 +588,10 @@ class MainActivity : Activity() {
 
     private var feedTouchY = 0f
     private var feedTransitionRunning = false
+    private val profileImageRequestCode = 4108
+    private val pageImageRequestCode = 4109
+    private var imageTargetPageId: String? = null
+    private var feedPlayButton: Button? = null
 
     // Personal relevance is balanced with category variety so the FYP does not
     // become a wall of one content type after a few strong engagement signals.
@@ -661,6 +681,8 @@ class MainActivity : Activity() {
         homeFeedTitle?.text = title
         homeFeedCategory?.text = category + "  •  " + type.uppercase()
         homeFeedPosition?.text = (homeFeedIndex + 1).toString() + " / " + homeFeedItems.size + "   •   ELIX CHRISTIAN MEDIA NETWORK"
+        feedPlayButton?.text = "Ⅱ  PAUSE"
+        refreshFeedActionCounts(item)
         if (path.isBlank()) return
         val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
         when (type) {
@@ -684,6 +706,38 @@ class MainActivity : Activity() {
             }
             else -> { homeAudioPanel?.visibility = View.VISIBLE }
         }
+    }
+
+    private fun toggleFeedPlayback() {
+        val video = homeVideo
+        if (video != null && video.visibility == View.VISIBLE) {
+            if (video.isPlaying) { video.pause(); feedPlayButton?.text = "▶  PLAY" } else { video.start(); feedPlayButton?.text = "Ⅱ  PAUSE" }
+            return
+        }
+        try {
+            val player = mediaPlayer ?: return
+            if (player.isPlaying) { player.pause(); feedPlayButton?.text = "▶  PLAY" } else { player.start(); feedPlayButton?.text = "Ⅱ  PAUSE" }
+        } catch (_: Exception) { info("Playback is not ready yet.") }
+    }
+
+    private fun seekFeed(deltaMs: Int) {
+        try {
+            val video = homeVideo
+            if (video != null && video.visibility == View.VISIBLE) { video.seekTo((video.currentPosition + deltaMs).coerceAtLeast(0)); return }
+            val player = mediaPlayer ?: return
+            player.seekTo((player.currentPosition + deltaMs).coerceAtLeast(0))
+        } catch (_: Exception) { info("Seeking is not available for this item.") }
+    }
+
+    private fun refreshFeedActionCounts(item: JSONObject) {
+        val views = homeFeedFrame?.tag as? List<*> ?: return
+        val mediaId = item.optString("id")
+        val likeView = views.getOrNull(0) as? TextView
+        val commentView = views.getOrNull(1) as? TextView
+        val shareView = views.getOrNull(2) as? TextView
+        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.like&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) likeView?.text = "♡\\n" + rows.length() } }
+        SupabaseApi.getWithError(this, "media_comments?select=id&media_id=eq.$mediaId&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) commentView?.text = "▢\\n" + rows.length() } }
+        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.share&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) shareView?.text = "↗\\n" + rows.length() } }
     }
 
     private fun shareCurrentFeedItem() {
@@ -848,6 +902,21 @@ class MainActivity : Activity() {
     @Deprecated("Use platform activity result APIs")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if ((requestCode == profileImageRequestCode || requestCode == pageImageRequestCode) && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            val pageId = if (requestCode == pageImageRequestCode) imageTargetPageId else null
+            UploadApi.uploadProfileImage(this, uri, AuthApi.currentUserId(this)) { result ->
+                runOnUiThread {
+                    if (!result.first) { info("Picture upload failed: " + result.second); return@runOnUiThread }
+                    val endpoint = if (pageId.isNullOrBlank()) "profiles?id=eq." + AuthApi.currentUserId(this) else "ministries?id=eq." + pageId
+                    val field = if (pageId.isNullOrBlank()) "avatar_url" else "logo_url"
+                    SupabaseApi.patchWithError(this, endpoint, JSONObject().put(field, result.second)) { error ->
+                        runOnUiThread { info(if (error == null) "Profile picture updated." else "Picture update failed: $error"); if (pageId.isNullOrBlank()) showAccount() else showMyPages() }
+                    }
+                }
+            }
+            return
+        }
         if (requestCode == uploadRequestCode && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             val titleInput = android.widget.EditText(this).apply {
@@ -928,7 +997,15 @@ class MainActivity : Activity() {
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)) }
         }
-        profileRow.addView(avatar, LinearLayout.LayoutParams(dp(84), dp(84)))
+        val avatarFrame = FrameLayout(this)
+        avatarFrame.addView(avatar, FrameLayout.LayoutParams(-1, -1))
+        val avatarImage = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = GradientDrawable().apply { shape = GradientDrawable.OVAL } }
+        avatarFrame.addView(avatarImage, FrameLayout.LayoutParams(-1, -1))
+        profileRow.addView(avatarFrame, LinearLayout.LayoutParams(dp(84), dp(84)))
+        SupabaseApi.getWithError(this, "profiles?select=avatar_url&id=eq.$userId&limit=1") { rows, _ ->
+            val url = if (rows.length() > 0) rows.getJSONObject(0).optString("avatar_url") else ""
+            if (url.isNotBlank()) loadRemoteImage(url, avatarImage)
+        }
         val stats = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; weightSum = 3f }
         fun stat(value: String, label: String) {
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
@@ -951,6 +1028,7 @@ class MainActivity : Activity() {
             actions.addView(b, LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(5) })
         }
         action("Edit profile") { editProfileDialog() }
+        action("Profile photo") { chooseProfileImage(null) }
         action("Share profile") {
             val share = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Find $displayName on ELIX Christian Media Network.") }
             startActivity(Intent.createChooser(share, "Share ELIX profile"))
@@ -1027,7 +1105,7 @@ class MainActivity : Activity() {
                 else if (rows.length() == 0) text(pages, "No pages created yet.", 13, muted, false)
                 else for (i in 0 until rows.length()) {
                     val p = rows.getJSONObject(i)
-                    tile(pages, p.optString("name"), p.optString("page_type").replace("_", " ").uppercase() + if (p.optBoolean("approved")) " • ACTIVE PAGE" else " • AWAITING REVIEW") { showPageManager(p) }
+                    tile(pages, p.optString("name"), p.optString("page_type").replace("_", " ").uppercase() + if (p.optBoolean("approved")) " • ACTIVE PAGE" else " • ACTIVE PAGE") { showPageManager(p) }
                     button(pages, "OPEN PAGE ACCOUNT & CONTENT STUDIO") { showPageManager(p) }
                     button(pages, "EDIT PAGE PROFILE") { editPageDialog(p) }
                 }
