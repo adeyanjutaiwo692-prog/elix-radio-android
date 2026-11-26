@@ -486,11 +486,24 @@ class MainActivity : Activity() {
 
     private fun subscribeCurrentCreator() {
         val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
-        val pageId = item.optString("ministry_id")
-        if (pageId.isBlank()) { info("This post is not linked to a ministry page yet."); return }
+        val creatorId = item.optString("uploaded_by")
+        if (creatorId.isBlank()) { info("Creator information is not available for this post."); return }
         if (!AuthApi.isSignedIn(this)) { showAccount(); return }
-        val body = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)
-        SupabaseApi.postWithError(this, "subscriptions", body) { e -> runOnUiThread { info(if (e == null) "Subscribed to this page." else "Subscription could not be saved: $e") } }
+        val userId = AuthApi.currentUserId(this)
+        if (creatorId == userId) { info("This is your own content."); return }
+        SupabaseApi.getWithError(this, "creator_subscriptions?select=creator_id&user_id=eq.$userId&creator_id=eq.$creatorId&limit=1") { rows, lookupError ->
+            if (lookupError != null) { runOnUiThread { info("Subscription service unavailable: $lookupError") }; return@getWithError }
+            if (rows.length() > 0) {
+                SupabaseApi.deleteWithError(this, "creator_subscriptions?user_id=eq.$userId&creator_id=eq.$creatorId") { e ->
+                    runOnUiThread { info(if (e == null) "Subscription cancelled." else "Could not cancel subscription: $e") }
+                }
+            } else {
+                val body = JSONObject().put("user_id", userId).put("creator_id", creatorId)
+                SupabaseApi.postWithError(this, "creator_subscriptions", body) { e ->
+                    runOnUiThread { info(if (e == null) "Subscribed to this creator." else "Subscription failed: $e") }
+                }
+            }
+        }
     }
 
     private var feedTouchY = 0f
@@ -1239,7 +1252,7 @@ class MainActivity : Activity() {
     private fun text(parent: LinearLayout, value: String, size: Int, color: Int, bold: Boolean) {
         val v = TextView(this).apply {
             text=value; textSize=size.toFloat(); setTextColor(color)
-            if (bold) setTypeface(Typeface.DEFAULT,Typeface.BOLD)
+            typeface = Typeface.create(if (bold) "sans-serif-medium" else "sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
             gravity=Gravity.START; setLineSpacing(dp(3).toFloat(),1f)
         }
         parent.addView(v,fullWidth())
