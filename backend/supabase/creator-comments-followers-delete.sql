@@ -33,6 +33,13 @@ create policy "comments owner delete"
 grant select on public.media_comments to anon, authenticated;
 grant insert, delete on public.media_comments to authenticated;
 
+-- Exact follower totals for each creator page.
+create or replace view public.ministry_follower_counts as
+    select ministry_id, count(*)::bigint as follower_count
+    from public.ministry_follows
+    group by ministry_id;
+grant select on public.ministry_follower_counts to anon, authenticated;
+
 -- Followers are public counts; each member can only follow/unfollow themselves.
 drop policy if exists "follows own" on public.ministry_follows;
 drop policy if exists "follows public read" on public.ministry_follows;
