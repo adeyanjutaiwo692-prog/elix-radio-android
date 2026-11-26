@@ -1056,7 +1056,7 @@ class MainActivity : Activity() {
         if(!AuthApi.isSignedIn(this)){showAccount();return}
         SupabaseApi.getWithError(this,"ministries?select=id,name&owner_id=eq.${AuthApi.currentUserId(this)}&order=name.asc"){ rows,e -> runOnUiThread {
             val labels=mutableListOf("Personal account"); val ids=mutableListOf<String?>(null); for(i in 0 until rows.length()){val p=rows.getJSONObject(i);labels.add(p.optString("name"));ids.add(p.optString("id"))}
-            android.app.AlertDialog.Builder(this).setTitle("Publish under which account?").setItems(labels.toTypedArray()){_,idx -> selectedPageId=ids[idx]; android.app.AlertDialog.Builder(this).setTitle("Choose media type").setItems(arrayOf("Audio","Video","Images","Book (PDF)")){_,which -> selectedUploadType=arrayOf("audio","video","image","pdf")[which]; val type=if(selectedUploadType=="audio")"audio/*" else if(selectedUploadType=="video")"video/*" else if(selectedUploadType=="pdf")"application/pdf" else "image/*"; val intent=Intent(Intent.ACTION_GET_CONTENT).apply{addCategory(Intent.CATEGORY_OPENABLE);this.type=type};startActivityForResult(intent,uploadRequestCode)}.show()}.show()
+            android.app.AlertDialog.Builder(this).setTitle("Publish under which account?").setItems(labels.toTypedArray()){_,idx -> selectedPageId=ids[idx]; android.app.AlertDialog.Builder(this).setTitle("Choose media type").setItems(arrayOf("Audio","Video","Images","Book (PDF)")){_,which -> selectedUploadType=arrayOf("audio","video","image","pdf")[which]; val type=if(selectedUploadType=="audio")"audio/*" else if(selectedUploadType=="video")"video/*" else if(selectedUploadType=="pdf")"application/pdf" else "image/*"; val gallery=Intent(Intent.ACTION_GET_CONTENT).apply{addCategory(Intent.CATEGORY_OPENABLE);this.type=type}; val camera=when(selectedUploadType){"video"->Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE);"image"->Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);else->null}; val chooser=Intent.createChooser(gallery,"Choose from gallery or camera"); if(camera!=null && camera.resolveActivity(packageManager)!=null) chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS,arrayOf(camera)); startActivityForResult(chooser,uploadRequestCode)}.show()}.show()
         } }
     }
     @Deprecated("Use platform activity result APIs")
@@ -1083,7 +1083,12 @@ class MainActivity : Activity() {
             return
         }
         if (requestCode == uploadRequestCode && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
+            var uri = data?.data
+            if (uri == null && selectedUploadType == "image") {
+                val bitmap = data?.extras?.get("data") as? android.graphics.Bitmap ?: return
+                uri = try { Uri.parse(android.provider.MediaStore.Images.Media.insertImage(contentResolver, bitmap, "ELIX upload", null)) } catch (_: Exception) { null }
+            }
+            val selectedUri = uri ?: return
             val titleInput = android.widget.EditText(this).apply {
                 hint = "Give your upload a title"
                 setTextColor(white)
@@ -1110,7 +1115,7 @@ class MainActivity : Activity() {
                     android.app.AlertDialog.Builder(this).setTitle("Choose content category")
                         .setItems(categoryLabels) { _, index ->
                             info("Uploading file…")
-                            UploadApi.upload(this, uri, title, selectedUploadType, categoryKeys[index], selectedPageId) { result ->
+                            UploadApi.upload(this, selectedUri, title, selectedUploadType, categoryKeys[index], selectedPageId) { result ->
                         runOnUiThread {
                             if (result.ok) {
                                 info(result.message)
