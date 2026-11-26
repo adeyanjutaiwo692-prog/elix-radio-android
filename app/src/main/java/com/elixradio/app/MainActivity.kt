@@ -829,19 +829,136 @@ class MainActivity : Activity() {
     }
 
     private fun showAccount() {
-        base("Account","Your ELIX identity","MY ACCOUNT","Your profile, pages, uploads and creator tools are managed here.")
-        if (!AuthApi.isSignedIn(this)) { button(content,"CREATE ACCOUNT"){showAuthDialog(true)}; button(content,"SIGN IN"){showAuthDialog(false)}; notice(content,"Create an account to publish under your profile or manage a ministry/public-figure page."); return }
-        text(content,AuthApi.currentName(this).ifBlank{"ELIX member"},21,white,true); text(content,"Account role: "+AuthApi.currentRole(this).replace("_"," ").uppercase(),12,muted,true)
-        button(content,"⚙ ACCOUNT SETTINGS / EDIT PROFILE"){ editProfileDialog() }
-        button(content,"👥 DISCOVER CREATORS"){ showCreatorDirectory() }
-        button(content,"＋ CREATE MINISTRY / PUBLIC FIGURE PAGE"){createPageDialog()}; button(content,"＋ UPLOAD CONTENT"){chooseUploadFile()}
-        text(content,"MY PAGES",16,white,true); val pages=card(content)
-        SupabaseApi.getWithError(this,"ministries?select=id,name,description,city,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc"){ rows,e -> runOnUiThread { pages.removeAllViews(); if(e!=null||rows.length()==0)text(pages,"You have not created a page yet.",13,muted,false) else for(i in 0 until rows.length()){val p=rows.getJSONObject(i); tile(pages,p.optString("name"),p.optString("page_type").uppercase()+" • "+if(p.optBoolean("approved"))"PUBLIC" else "AWAITING APPROVAL"){showCreatorPage(p.optString("id"))}; button(pages,"EDIT PAGE PROFILE"){editPageDialog(p)}} } }
-        text(content,"MY UPLOADS & CONTENT MANAGEMENT",16,white,true); val uploads=card(content)
-        SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status,file_path&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}; button(uploads,"DELETE UPLOAD"){confirmDeleteUpload(item)}} } }
-        if(AuthApi.currentRole(this)=="super_admin")button(content,"⚙ OPEN DEVELOPER DASHBOARD"){showDeveloperDashboard()}
-        button(content,"SIGN OUT"){AuthApi.signOut(this);showWelcome()}
+        base("Account", "Your ELIX profile", "", "")
+        if (!AuthApi.isSignedIn(this)) {
+            text(content, "Welcome to ELIX", 25, white, true)
+            text(content, "Sign in to manage your profile, publish content and connect with creators.", 14, muted, false)
+            space(content, 18)
+            button(content, "CREATE ACCOUNT") { showAuthDialog(true) }
+            button(content, "SIGN IN") { showAuthDialog(false) }
+            return
+        }
+        val userId = AuthApi.currentUserId(this)
+        val displayName = AuthApi.currentName(this).ifBlank { "ELIX member" }
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        text(top, displayName.lowercase().replace(" ", "."), 21, white, true)
+        val settings = TextView(this).apply { text = "⚙"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(white); setOnClickListener { editProfileDialog() } }
+        top.addView(settings, LinearLayout.LayoutParams(dp(48), dp(48)))
+        content.addView(top, fullWidth())
+        val profileRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(12), 0, dp(12)) }
+        val avatar = TextView(this).apply {
+            text = displayName.trim().take(1).uppercase(); textSize = 30f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)) }
+        }
+        profileRow.addView(avatar, LinearLayout.LayoutParams(dp(84), dp(84)))
+        val stats = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; weightSum = 3f }
+        fun stat(value: String, label: String) {
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+            val number = TextView(this).apply { text = value; textSize = 18f; setTextColor(white); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
+            val caption = TextView(this).apply { text = label; textSize = 11f; setTextColor(muted) }
+            col.addView(number); col.addView(caption); stats.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        stat("…", "posts"); stat("…", "followers"); stat("…", "following")
+        profileRow.addView(stats, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(profileRow, fullWidth())
+        val bio = TextView(this).apply { text = displayName + "\nELIX Christian Media creator"; textSize = 13f; setTextColor(white); typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
+        content.addView(bio, fullWidth())
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        fun action(label: String, callback: () -> Unit) {
+            val b = Button(this).apply {
+                text = label; isAllCaps = false; textSize = 12f; setTextColor(white)
+                background = GradientDrawable().apply { setColor(Color.rgb(0,149,246)); cornerRadius = dp(7).toFloat() }
+                setOnClickListener { callback() }
+            }
+            actions.addView(b, LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(5) })
+        }
+        action("Edit profile") { editProfileDialog() }
+        action("Share profile") {
+            val share = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Find $displayName on ELIX Christian Media Network.") }
+            startActivity(Intent.createChooser(share, "Share ELIX profile"))
+        }
+        action("＋") { chooseUploadFile() }
+        content.addView(actions, fullWidth())
+        space(content, 12)
+        SupabaseApi.getWithError(this, "media_items?select=id&uploaded_by=eq.$userId&status=eq.approved&limit=1000") { posts, _ ->
+            SupabaseApi.getWithError(this, "creator_follower_counts?select=follower_count&creator_id=eq.$userId&limit=1") { followers, _ ->
+                SupabaseApi.getWithError(this, "creator_follows?select=follower_id&creator_id=eq.$userId") { following, _ ->
+                    runOnUiThread {
+                        if (isFinishing) return@runOnUiThread
+                        (stats.getChildAt(0) as LinearLayout).let { (it.getChildAt(0) as TextView).text = posts.length().toString() }
+                        (stats.getChildAt(1) as LinearLayout).let { (it.getChildAt(0) as TextView).text = if (followers.length() > 0) followers.getJSONObject(0).optLong("follower_count").toString() else "0" }
+                        (stats.getChildAt(2) as LinearLayout).let { (it.getChildAt(0) as TextView).text = following.length().toString() }
+                    }
+                }
+            }
+        }
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        listOf("▦  POSTS", "♧  SAVED", "▤  ABOUT").forEachIndexed { index, label ->
+            val tab = TextView(this).apply { text = label; textSize = 12f; gravity = Gravity.CENTER; setTextColor(if (index == 0) gold else muted); setPadding(0, dp(13), 0, dp(13)); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
+            tabs.addView(tab, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        content.addView(tabs, fullWidth())
+        content.addView(View(this).apply { setBackgroundColor(Color.rgb(225,225,225)) }, LinearLayout.LayoutParams(-1, dp(1)))
+        val grid = android.widget.GridLayout(this).apply { columnCount = 3; useDefaultMargins = false }
+        content.addView(grid, fullWidth())
+        SupabaseApi.getWithError(this, "media_items?select=id,title,description,kind,media_type,file_path,status&uploaded_by=eq.$userId&order=created_at.desc&limit=90") { rows, error ->
+            runOnUiThread {
+                grid.removeAllViews()
+                if (error != null) { text(content, "Your posts could not load: $error", 12, signalRed, false); return@runOnUiThread }
+                if (rows.length() == 0) {
+                    val empty = TextView(this).apply { text = "＋\nShare your first post"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(dp(20), dp(34), dp(20), dp(34)) }
+                    grid.addView(empty, android.widget.GridLayout.LayoutParams().apply { width = resources.displayMetrics.widthPixels; height = dp(150) })
+                } else {
+                    val width = (resources.displayMetrics.widthPixels - dp(46)) / 3
+                    for (i in 0 until rows.length()) {
+                        val item = rows.getJSONObject(i); val mediaType = item.optString("media_type")
+                        val tile = FrameLayout(this).apply {
+                            setBackgroundColor(Color.rgb(238,240,243))
+                            layoutParams = android.widget.GridLayout.LayoutParams().apply { width = width; height = width; setMargins(dp(1), dp(1), dp(1), dp(1)) }
+                            setOnClickListener { if (mediaType == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path")) }
+                        }
+                        val label = TextView(this).apply { text = when(mediaType) { "video" -> "▶"; "audio" -> "♫"; "pdf" -> "PDF"; else -> item.optString("title").take(18) }; textSize = if (mediaType == "image") 11f else 30f; gravity = Gravity.CENTER; setTextColor(Color.DKGRAY) }
+                        tile.addView(label, FrameLayout.LayoutParams(-1,-1))
+                        if (mediaType == "image") {
+                            val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                            tile.addView(image, FrameLayout.LayoutParams(-1,-1))
+                            val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(item.optString("file_path"), "/")
+                            Thread { try { val bitmap = URL(url).openStream().use { BitmapFactory.decodeStream(it) }; runOnUiThread { if (bitmap != null && image.parent != null) image.setImageBitmap(bitmap) } } catch (_: Exception) { } }.start()
+                        }
+                        grid.addView(tile)
+                    }
+                }
+            }
+        }
+        space(content, 18)
+        text(content, "ACCOUNT TOOLS", 13, muted, true)
+        tile(content, "Discover creators", "Find and follow other ELIX members.") { showCreatorDirectory() }
+        tile(content, "My ministry pages", "Create and manage ministry or public-figure pages.") { showMyPages() }
+        button(content, "＋  UPLOAD CONTENT") { chooseUploadFile() }
+        if (AuthApi.currentRole(this) == "super_admin") button(content, "DEVELOPER DASHBOARD") { showDeveloperDashboard() }
+        button(content, "SIGN OUT") { AuthApi.signOut(this); showWelcome() }
     }
+
+    private fun showMyPages() {
+        base("Account", "Your channels", "MY PAGES", "Manage your ministry and public-figure profiles.")
+        val pages = card(content)
+        SupabaseApi.getWithError(this, "ministries?select=id,name,description,city,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc") { rows, error ->
+            runOnUiThread {
+                pages.removeAllViews()
+                if (error != null) text(pages, "Could not load pages: $error", 12, signalRed, false)
+                else if (rows.length() == 0) text(pages, "No pages created yet.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val p = rows.getJSONObject(i)
+                    tile(pages, p.optString("name"), p.optString("page_type").uppercase() + if (p.optBoolean("approved")) " • PUBLIC" else " • PENDING") { showCreatorPage(p.optString("id")) }
+                    button(pages, "EDIT PAGE") { editPageDialog(p) }
+                }
+            }
+        }
+        button(content, "＋ CREATE PAGE") { createPageDialog() }
+        button(content, "BACK TO PROFILE") { showAccount() }
+    }
+
     private fun showCreatorDirectory() {
         base("Account", "ELIX creator community", "DISCOVER CREATORS", "Find Christian creators, follow their accounts and explore everything they publish.")
         val list = card(content)
