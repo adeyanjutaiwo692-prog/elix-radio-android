@@ -27,3 +27,43 @@ create policy "page owner edit profile"
   on public.ministries for update to authenticated
   using (owner_id = auth.uid())
   with check (owner_id = auth.uid());
+
+-- Page owners can publish into their own page without requiring a separate
+-- ministry-membership invitation. The authenticated uploader remains the owner.
+drop policy if exists "media page owner insert" on public.media_items;
+create policy "media page owner insert"
+  on public.media_items for insert to authenticated
+  with check (
+    uploaded_by = auth.uid()
+    and ministry_id is not null
+    and exists (
+      select 1 from public.ministries m
+      where m.id = ministry_id and m.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "programme page owner manage" on public.programmes;
+create policy "programme page owner manage"
+  on public.programmes for all to authenticated
+  using (
+    ministry_id is not null and exists (
+      select 1 from public.ministries m
+      where m.id = ministry_id and m.owner_id = auth.uid()
+    )
+  )
+  with check (
+    ministry_id is not null and exists (
+      select 1 from public.ministries m
+      where m.id = ministry_id and m.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "stream page owner manage" on public.live_streams;
+create policy "stream page owner manage"
+  on public.live_streams for all to authenticated
+  using (
+    exists (select 1 from public.ministries m where m.id = ministry_id and m.owner_id = auth.uid())
+  )
+  with check (
+    exists (select 1 from public.ministries m where m.id = ministry_id and m.owner_id = auth.uid())
+  );
