@@ -33,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var nav: LinearLayout
     private val uploadRequestCode = 4107
     private var selectedUploadType = "audio"
+    private var selectedPageId: String? = null
     private var libraryType = "all"
     private var mediaPlayer: MediaPlayer? = null
     private val homeFeedItems = ArrayList<JSONObject>()
@@ -78,7 +79,7 @@ class MainActivity : Activity() {
 
     private fun setNav(active: String) {
         nav.removeAllViews()
-        listOf("Home", "Radio", "Live Radio", "Live Video", "Library", "Upcoming", "Account").forEach { label ->
+        listOf("Home", "Discover", "Account", "Broadcasts").forEach { label ->
             val b = TextView(this).apply {
                 text = label
                 textSize = 10f
@@ -89,13 +90,9 @@ class MainActivity : Activity() {
                 setOnClickListener {
                     when (label) {
                         "Home" -> showHome()
-                        "Radio" -> showRadio()
-                        "Live Radio" -> showLiveRadio()
-                        "Live Video" -> showLive()
-                        "Library" -> showLibrary()
-                        "Ministries" -> showMinistries()
-                        "Upcoming" -> showUpcoming()
+                        "Discover" -> showDiscover()
                         "Account" -> showAccount()
+                        "Broadcasts" -> showBroadcasts()
                     }
                 }
             }
@@ -129,6 +126,61 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+        base("Home", "Discover Christian voices", "MINISTRIES & PAGES", "Find ministries and Christian public figures. Open a page to explore their content and programmes.")
+        if (AuthApi.isSignedIn(this)) button(content, "＋  CREATE A PAGE") { createPageDialog() }
+        val list = card(content); text(list, "Loading pages…", 13, muted, false)
+        SupabaseApi.getWithError(this, "ministries?select=id,name,city,page_type,description&approved=eq.true&order=name.asc&limit=200") { rows, error ->
+            runOnUiThread { list.removeAllViews();
+                if (error != null) text(list, error, 12, signalRed, false)
+                else if (rows.length() == 0) text(list, "No public pages yet. Create an account and submit the first page.", 14, muted, false)
+                else for (i in 0 until rows.length()) { val p = rows.getJSONObject(i); tile(list, p.optString("name"), p.optString("page_type").replace("_"," ").uppercase() + " • " + p.optString("city","Nigeria")) { showCreatorPage(p.optString("id")) } }
+            }
+        }
+        text(content, "DISCOVER SOMETHING NEW", 16, white, true)
+        tile(content, "Discover videos, audio and images", "Swipe through autoplaying Christian content.") { showDiscover() }
+    }
+
+    private fun showBroadcasts() {
+        base("Broadcasts", "Listen and watch live", "RADIO & LIVE", "Broadcasts are separate from ministry pages and Discover.")
+        tile(content, "ELIX RADIO", "Recorded audio programmes, sermons and music.") { showRadio() }
+        tile(content, "LIVE RADIO", "Real-time audio broadcasts only.") { showLiveRadio() }
+        tile(content, "LIVE VIDEO", "Authorised live video sessions.") { showLive() }
+    }
+
+    private fun showCreatorPage(pageId: String) {
+        base("Home", "Ministry & creator channel", "PAGE", "Explore this page’s complete content and programmes.")
+        val profile = card(content); text(profile, "Loading page…", 13, muted, false)
+        SupabaseApi.getWithError(this, "ministries?select=id,name,description,city,page_type&id=eq.$pageId&limit=1") { pages, error ->
+            runOnUiThread { profile.removeAllViews(); if (error != null || pages.length() == 0) text(profile, "Page could not be loaded.", 13, signalRed, false) else {
+                val p = pages.getJSONObject(0); text(profile, p.optString("name"), 23, white, true); text(profile, p.optString("page_type").replace("_"," ").uppercase() + " • " + p.optString("city","Nigeria"), 12, gold, true); text(profile, p.optString("description"), 14, muted, false)
+                if (AuthApi.isSignedIn(this)) button(profile, "＋ FOLLOW PAGE") { SupabaseApi.postWithError(this, "ministry_follows", JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)) { e -> runOnUiThread { info(if (e == null) "Page followed." else "Could not follow: $e") } } }
+            } }
+        }
+        text(content, "UPCOMING PROGRAMMES & CONFERENCES", 16, white, true); val programmes = card(content)
+        SupabaseApi.getWithError(this, "programmes?select=title,description,starts_at&ministry_id=eq.$pageId&status=eq.scheduled&order=starts_at.asc&limit=50") { rows, e -> runOnUiThread { programmes.removeAllViews(); if (e != null || rows.length() == 0) text(programmes, "No upcoming programmes announced.", 13, muted, false) else for (i in 0 until rows.length()) { val x=rows.getJSONObject(i); text(programmes,x.optString("title"),15,gold,true); text(programmes,x.optString("starts_at").replace("T"," "),12,muted,false); text(programmes,x.optString("description"),13,muted,false) } } }
+        listOf("BOOKS" to "pdf", "AUDIO MESSAGES" to "audio", "SHORTS & VIDEOS" to "video", "IMAGES" to "image").forEach { (heading, type) ->
+            text(content, heading, 16, white, true); val section = card(content)
+            SupabaseApi.getWithError(this, "media_items?select=id,title,kind,media_type,file_path&ministry_id=eq.$pageId&status=eq.approved&media_type=eq.$type&order=created_at.desc&limit=40") { rows, e -> runOnUiThread { section.removeAllViews(); if (e != null || rows.length() == 0) text(section, "Nothing published here yet.", 13, muted, false) else for (i in 0 until rows.length()) { val x=rows.getJSONObject(i); val t=x.optString("title"); text(section,t,15,gold,true); text(section,x.optString("kind").replace("_"," ").uppercase(),11,muted,false); button(section,if(type=="audio") "▶ PLAY AUDIO" else "OPEN") { if(type=="audio") playAudio(t,x.optString("file_path")) else openMedia(x.optString("file_path")) } } } }
+        }
+        text(content, "LIVE MESSAGES", 16, white, true); tile(content, "Live broadcasts", "See authorised live radio and video sessions.") { showBroadcasts() }
+        button(content, "BACK TO PAGES") { showHome() }
+    }
+
+    private fun createPageDialog() {
+        val name=android.widget.EditText(this).apply { hint="Ministry or public figure name"; setTextColor(white) }
+        val desc=android.widget.EditText(this).apply { hint="Short description"; setTextColor(white) }
+        val city=android.widget.EditText(this).apply { hint="City / location"; setTextColor(white) }
+        val type=android.widget.Spinner(this).apply { adapter=android.widget.ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("Ministry","Public figure")) }
+        val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),0); addView(name); addView(type); addView(desc); addView(city) }
+        android.app.AlertDialog.Builder(this).setTitle("Create public page").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Submit",null).create().also { d -> d.setOnShowListener { d.getButton(-1).setOnClickListener { val n=name.text.toString().trim(); if(n.isBlank()){name.error="Enter a name";return@setOnClickListener}; val slug=n.lowercase().replace(Regex("[^a-z0-9]+"),"-").trim('-')+"-"+System.currentTimeMillis().toString().takeLast(5); val body=JSONObject().put("name",n).put("slug",slug).put("description",desc.text.toString()).put("city",city.text.toString()).put("page_type",if(type.selectedItemPosition==1)"public_figure" else "ministry").put("owner_id",AuthApi.currentUserId(this)); SupabaseApi.postWithError(this,"ministries",body){ e -> runOnUiThread { info(if(e==null)"Page submitted for ELIX approval." else "Page creation failed: $e"); if(e==null)showAccount() } }; d.dismiss() } }; d.show() }
+    }
+
+    private fun editMediaDialog(item: JSONObject) {
+        val title=android.widget.EditText(this).apply { setText(item.optString("title")); setTextColor(white) }; val desc=android.widget.EditText(this).apply { hint="Description"; setText(item.optString("description")); setTextColor(white) }
+        val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),0); addView(title); addView(desc) }
+        android.app.AlertDialog.Builder(this).setTitle("Edit your content").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create().also { d -> d.setOnShowListener { d.getButton(-1).setOnClickListener { val body=JSONObject().put("title",title.text.toString().trim()).put("description",desc.text.toString().trim()); SupabaseApi.patchWithError(this,"media_items?id=eq.${item.optString("id")}",body){ e -> runOnUiThread { info(if(e==null)"Content updated." else "Update failed: $e"); if(e==null)showAccount() } }; d.dismiss() } }; d.show() }
+    }
+    private fun showDiscover() {
         content.removeAllViews()
         content.setPadding(0, 0, 0, 0)
         setNav("Home")
@@ -477,16 +529,12 @@ class MainActivity : Activity() {
     }
 
     private fun chooseUploadFile() {
-        if (!AuthApi.isSignedIn(this)) { info("Please sign in first."); showAccount(); return }
-        android.app.AlertDialog.Builder(this).setTitle("Choose media type")
-            .setItems(arrayOf("Audio", "Video", "Images")) { _, which ->
-                selectedUploadType = arrayOf("audio", "video", "image")[which]
-                val pickerType = if (selectedUploadType == "audio") "audio/*" else if (selectedUploadType == "video") "video/*" else "image/*"
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = pickerType }
-                startActivityForResult(intent, uploadRequestCode)
-            }.show()
+        if(!AuthApi.isSignedIn(this)){showAccount();return}
+        SupabaseApi.getWithError(this,"ministries?select=id,name&owner_id=eq.${AuthApi.currentUserId(this)}&order=name.asc"){ rows,e -> runOnUiThread {
+            val labels=mutableListOf("Personal account"); val ids=mutableListOf<String?>(null); for(i in 0 until rows.length()){val p=rows.getJSONObject(i);labels.add(p.optString("name"));ids.add(p.optString("id"))}
+            android.app.AlertDialog.Builder(this).setTitle("Publish under which account?").setItems(labels.toTypedArray()){_,idx -> selectedPageId=ids[idx]; android.app.AlertDialog.Builder(this).setTitle("Choose media type").setItems(arrayOf("Audio","Video","Images")){_,which -> selectedUploadType=arrayOf("audio","video","image")[which]; val type=if(selectedUploadType=="audio")"audio/*" else if(selectedUploadType=="video")"video/*" else "image/*"; val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);this.type=type};startActivityForResult(intent,uploadRequestCode)}.show()}.show()
+        } }
     }
-
     @Deprecated("Use platform activity result APIs")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -518,11 +566,11 @@ class MainActivity : Activity() {
                     android.app.AlertDialog.Builder(this).setTitle("Choose content category")
                         .setItems(categoryLabels) { _, index ->
                             info("Uploading file…")
-                            UploadApi.upload(this, uri, title, selectedUploadType, categoryKeys[index]) { result ->
+                            UploadApi.upload(this, uri, title, selectedUploadType, categoryKeys[index], selectedPageId) { result ->
                         runOnUiThread {
                             if (result.ok) {
                                 info(result.message)
-                                showLibrary()
+                                showAccount()
                             } else {
                                 android.app.AlertDialog.Builder(this)
                                     .setTitle("ELIX upload could not be published")
@@ -540,24 +588,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showMinistries() {
-        base("Ministries", "Our broadcast partners", "MINISTRY CHANNELS", "Follow ministries and discover their broadcasts.")
-        val ministryList = card(content)
-        text(ministryList, "Loading approved ministry channels…", 14, muted, false)
-        SupabaseApi.get("ministries?select=name,city&approved=eq.true&order=name.asc") { rows ->
-            runOnUiThread {
-                ministryList.removeAllViews()
-                if (rows.length() == 0) text(ministryList, "No approved ministry channels have been published yet.", 14, muted, false)
-                for (i in 0 until rows.length()) {
-                    val item = rows.getJSONObject(i)
-                    text(ministryList, item.optString("name"), 17, gold, true)
-                    text(ministryList, item.optString("city", "Nigeria"), 13, muted, false)
-                    space(ministryList, 8)
-                }
-            }
-        }
-        tile(content, "Glory Realm Global live", "Minister PAUL AYO · Pilot broadcast") { openLive() }
-    }
+    private fun showMinistries() = showHome()
 
     private fun showUpcoming() {
         base("Upcoming", "Broadcast calendar", "UPCOMING PROGRAMMES", "Plan ahead and join upcoming ministry broadcasts.")
@@ -565,37 +596,17 @@ class MainActivity : Activity() {
     }
 
     private fun showAccount() {
-        base("Account", "Your ELIX experience", "MY ACCOUNT", "Sign in or create your free ELIX listener account.")
-        if (AuthApi.isSignedIn(this)) {
-            text(content, "Signed in as " + AuthApi.currentName(this).ifBlank { "ELIX listener" }, 16, gold, true)
-            text(content, "Account role: " + AuthApi.currentRole(this).replace('_', ' ').uppercase(), 12, muted, true)
-            AuthApi.currentRoleError(this).takeIf { it.isNotBlank() }?.let {
-                text(content, "Role sync diagnostic: $it", 11, muted, false)
-            }
-            space(content, 12)
-            if (AuthApi.currentRole(this) == "super_admin") {
-                button(content, "⚙  OPEN DEVELOPER DASHBOARD") { showDeveloperDashboard() }
-                space(content, 10)
-            }
-            val roleBeforeRefresh = AuthApi.currentRole(this)
-            AuthApi.fetchRole(this) { role ->
-                runOnUiThread {
-                    if (role == "super_admin" && roleBeforeRefresh != role && !isFinishing) showAccount()
-                }
-            }
-            button(content, "SIGN OUT") {
-                AuthApi.signOut(this)
-                showAccount()
-            }
-            return
-        }
-        button(content, "CREATE ACCOUNT") { showAuthDialog(true) }
-        space(content, 10)
-        button(content, "SIGN IN") { showAuthDialog(false) }
-        space(content, 14)
-        notice(content, "Use your email address and a password. If email confirmation is enabled, confirm your address before signing in.")
+        base("Account","Your ELIX identity","MY ACCOUNT","Your profile, pages, uploads and creator tools are managed here.")
+        if (!AuthApi.isSignedIn(this)) { button(content,"CREATE ACCOUNT"){showAuthDialog(true)}; button(content,"SIGN IN"){showAuthDialog(false)}; notice(content,"Create an account to publish under your profile or manage a ministry/public-figure page."); return }
+        text(content,AuthApi.currentName(this).ifBlank{"ELIX member"},21,white,true); text(content,"Account role: "+AuthApi.currentRole(this).replace("_"," ").uppercase(),12,muted,true)
+        button(content,"＋ CREATE MINISTRY / PUBLIC FIGURE PAGE"){createPageDialog()}; button(content,"＋ UPLOAD CONTENT"){chooseUploadFile()}
+        text(content,"MY PAGES",16,white,true); val pages=card(content)
+        SupabaseApi.getWithError(this,"ministries?select=id,name,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc"){ rows,e -> runOnUiThread { pages.removeAllViews(); if(e!=null||rows.length()==0)text(pages,"You have not created a page yet.",13,muted,false) else for(i in 0 until rows.length()){val p=rows.getJSONObject(i); tile(pages,p.optString("name"),p.optString("page_type").uppercase()+" • "+if(p.optBoolean("approved"))"PUBLIC" else "AWAITING APPROVAL"){showCreatorPage(p.optString("id"))}} } }
+        text(content,"MY UPLOADS & CONTENT MANAGEMENT",16,white,true); val uploads=card(content)
+        SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}} } }
+        if(AuthApi.currentRole(this)=="super_admin")button(content,"⚙ OPEN DEVELOPER DASHBOARD"){showDeveloperDashboard()}
+        button(content,"SIGN OUT"){AuthApi.signOut(this);showAccount()}
     }
-
     private fun showAuthDialog(create: Boolean) {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
