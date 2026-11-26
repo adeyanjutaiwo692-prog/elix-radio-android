@@ -176,7 +176,7 @@ class MainActivity : Activity() {
 
         val search = android.widget.EditText(this).apply {
             hint = "Search ministries, churches, preachers…"
-            textSize = 14f; singleLine = true; setTextColor(white); setHintTextColor(muted)
+            textSize = 14f; setSingleLine(true); setTextColor(white); setHintTextColor(muted)
             setPadding(dp(16), 0, dp(16), 0)
             background = GradientDrawable().apply { setColor(panel); cornerRadius = dp(15).toFloat(); setStroke(dp(1), Color.rgb(225,225,225)) }
             compoundDrawablePadding = dp(8)
@@ -186,7 +186,7 @@ class MainActivity : Activity() {
 
         val filters = listOf("All", "Ministries", "Churches", "Organisations", "Preachers", "Authors", "Artists")
         var selectedFilter = "All"
-        val chipScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipToPadding = false }
+        val chipScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipToPadding = false }
         val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         chipScroll.addView(chipRow)
         content.addView(chipScroll, fullWidth())
