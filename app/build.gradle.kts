@@ -13,8 +13,8 @@ android {
         applicationId = "com.elixradio.app"
         minSdk = 23
         targetSdk = 35
-        buildConfigField("String", "SUPABASE_URL", "\\"https://sumqnvpvtqpbbbytmbvk.supabase.co\\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\\"sb_publishable_-H-6950SAms-43NMmbM0xQ_rTz-lGl0\\"")
+        buildConfigField("String", "SUPABASE_URL", "\"https://sumqnvpvtqpbbbytmbvk.supabase.co\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"sb_publishable_-H-6950SAms-43NMmbM0xQ_rTz-lGl0\"")
         versionCode = 4
         versionName = "1.2.0"
     }
