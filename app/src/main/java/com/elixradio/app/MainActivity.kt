@@ -1346,24 +1346,67 @@ class MainActivity : Activity() {
     private fun showCreatorProfile(creatorId: String, creatorName: String) {
         base("Account", "Creator profile", creatorName, "Follow this creator and browse their published Christian content.")
         val profile = card(content)
-        text(profile, "Loading profile…", 13, muted, false)
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val avatarFrame = FrameLayout(this)
+        val fallback = TextView(this).apply {
+            text = creatorName.take(1).uppercase()
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(130, 70, 160)) }
+        }
+        avatarFrame.addView(fallback, FrameLayout.LayoutParams(-1, -1))
+        val avatar = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = GradientDrawable().apply { shape = GradientDrawable.OVAL } }
+        avatarFrame.addView(avatar, FrameLayout.LayoutParams(-1, -1))
+        header.addView(avatarFrame, LinearLayout.LayoutParams(dp(76), dp(76)))
+        val identity = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, 0, 0) }
+        text(identity, creatorName, 20, white, true)
+        text(identity, "ELIX CREATOR", 11, gold, true)
+        header.addView(identity, LinearLayout.LayoutParams(0, -2, 1f))
+        profile.addView(header, fullWidth())
+        SupabaseApi.getWithError(this, "profiles?select=avatar_url,display_name&id=eq.$creatorId&limit=1") { rows, _ ->
+            if (rows.length() > 0) {
+                val url = rows.getJSONObject(0).optString("avatar_url")
+                if (url.isNotBlank()) loadRemoteImage(url, avatar)
+            }
+        }
         val follow = Button(this).apply { isAllCaps = false }
         if (AuthApi.isSignedIn(this) && creatorId != AuthApi.currentUserId(this)) content.addView(follow, fullWidth())
+        val share = Button(this).apply {
+            text = "SHARE CREATOR PROFILE"
+            isAllCaps = false
+            setOnClickListener {
+                val invite = "elix://invite/$creatorId"
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, "Discover $creatorName on ELIX Christian Media Network: $invite")
+                }
+                startActivity(Intent.createChooser(send, "Share ELIX creator"))
+            }
+        }
+        content.addView(share, fullWidth())
         fun refresh() {
             SupabaseApi.getWithError(this, "creator_follower_counts?select=follower_count&creator_id=eq.$creatorId&limit=1") { counts, countError ->
                 SupabaseApi.getWithError(this, "creator_follows?select=follower_id&creator_id=eq.$creatorId") { followers, _ ->
-                    SupabaseApi.getWithError(this, "creator_follows?select=creator_id&creator_id=eq.$creatorId&follower_id=eq.\${AuthApi.currentUserId(this)}&limit=1") { mine, mineError ->
+                    val currentUser = AuthApi.currentUserId(this)
+                    if (currentUser.isBlank() || creatorId == currentUser) {
                         runOnUiThread {
-                            profile.removeAllViews()
-                            text(profile, creatorName, 22, white, true)
                             val total = if (countError == null && counts.length() > 0) counts.getJSONObject(0).optLong("follower_count") else followers.length().toLong()
                             text(profile, "$total followers", 13, gold, true)
-                            if (AuthApi.isSignedIn(this) && creatorId != AuthApi.currentUserId(this)) {
+                        }
+                    } else {
+                        SupabaseApi.getWithError(this, "creator_follows?select=creator_id&creator_id=eq.$creatorId&follower_id=eq.$currentUser&limit=1") { mine, mineError ->
+                            runOnUiThread {
+                                val total = if (countError == null && counts.length() > 0) counts.getJSONObject(0).optLong("follower_count") else followers.length().toLong()
+                                text(profile, "$total followers", 13, gold, true)
                                 val following = mineError == null && mine.length() > 0
                                 follow.text = if (following) "FOLLOWING · UNFOLLOW" else "＋ FOLLOW"
                                 follow.setOnClickListener {
-                                    if (following) SupabaseApi.deleteWithError(this, "creator_follows?follower_id=eq.\${AuthApi.currentUserId(this)}&creator_id=eq.$creatorId") { e -> runOnUiThread { info(if (e == null) "Unfollowed $creatorName." else "Could not unfollow: $e"); refresh() } }
-                                    else SupabaseApi.postWithError(this, "creator_follows", JSONObject().put("follower_id", AuthApi.currentUserId(this)).put("creator_id", creatorId)) { e -> runOnUiThread { info(if (e == null) "You are now following $creatorName." else "Could not follow: $e"); refresh() } }
+                                    if (following) SupabaseApi.deleteWithError(this, "creator_follows?follower_id=eq.$currentUser&creator_id=eq.$creatorId") { e ->
+                                        runOnUiThread { info(if (e == null) "Unfollowed $creatorName." else "Could not unfollow: $e"); refresh() }
+                                    } else SupabaseApi.postWithError(this, "creator_follows", JSONObject().put("follower_id", currentUser).put("creator_id", creatorId)) { e ->
+                                        runOnUiThread { info(if (e == null) "You are now following $creatorName." else "Could not follow: $e"); refresh() }
+                                    }
                                 }
                             }
                         }
@@ -1374,7 +1417,7 @@ class MainActivity : Activity() {
         refresh()
         text(content, "PUBLISHED CONTENT", 16, white, true)
         val uploads = card(content)
-        SupabaseApi.getWithError(this, "media_items?select=id,title,description,kind,media_type,file_path,status&uploaded_by=eq.$creatorId&status=eq.approved&order=created_at.desc&limit=100") { rows, error ->
+        SupabaseApi.getWithError(this, "media_items?select=id,title,description,kind,media_type,file_path,thumbnail_url,status&uploaded_by=eq.$creatorId&status=eq.approved&order=created_at.desc&limit=100") { rows, error ->
             runOnUiThread {
                 uploads.removeAllViews()
                 if (error != null) text(uploads, "Could not load creator content: $error", 12, signalRed, false)
@@ -1383,8 +1426,10 @@ class MainActivity : Activity() {
                     val item = rows.getJSONObject(i)
                     text(uploads, item.optString("title"), 15, gold, true)
                     text(uploads, item.optString("media_type").uppercase() + " • " + item.optString("kind").uppercase(), 11, muted, false)
-                    button(uploads, if (item.optString("media_type") == "audio") "▶ PLAY AUDIO" else "OPEN CONTENT") {
-                        if (item.optString("media_type") == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path"), item.optString("media_type"))
+                    val mediaType = item.optString("media_type")
+                    button(uploads, if (mediaType == "audio") "▶ PLAY AUDIO" else "OPEN CONTENT") {
+                        if (mediaType == "audio") playAudio(item.optString("title"), item.optString("file_path"))
+                        else openMedia(item.optString("file_path"), mediaType)
                     }
                 }
             }
