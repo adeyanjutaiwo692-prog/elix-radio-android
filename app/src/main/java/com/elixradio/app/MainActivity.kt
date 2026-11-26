@@ -35,10 +35,7 @@ class MainActivity : Activity() {
         root.orientation = LinearLayout.VERTICAL
         root.setPadding(dp(22), dp(30), dp(22), dp(36))
         root.setBackgroundColor(background)
-        scroll.addView(root, ScrollView.LayoutParams(
-            ScrollView.LayoutParams.MATCH_PARENT,
-            ScrollView.LayoutParams.WRAP_CONTENT
-        ))
+        scroll.addView(root)
         setContentView(scroll)
 
         addText(root, "ELIX CHRISTIAN MEDIA NETWORK", 12, gold, true)
