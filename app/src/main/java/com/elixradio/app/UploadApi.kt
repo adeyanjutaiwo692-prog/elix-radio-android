@@ -180,32 +180,60 @@ object UploadApi {
             val result = try {
                 val token = AuthApi.accessToken(context)
                 require(token.isNotBlank() && userId.isNotBlank()) { "Please sign in first." }
-                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
-                require(mime in listOf("image/jpeg", "image/png", "image/webp")) { "Choose a JPG, PNG or WebP image." }
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("Could not read this image.")
-                require(bytes.isNotEmpty() && bytes.size <= 10 * 1024 * 1024) { "Profile pictures must be under 10 MB." }
-                val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
-                val path = userId + "/profile-" + UUID.randomUUID() + "." + ext
+                val sourceMime = context.contentResolver.getType(uri).orEmpty()
+                require(sourceMime.startsWith("image/")) { "Choose an image from your gallery or camera." }
+
+                // Decode and re-encode as JPEG so HEIC, camera thumbnails and provider-specific
+                // image MIME types are accepted consistently by the ELIX public-image bucket.
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+                } ?: throw IllegalStateException("Could not read this image. Please choose it again.")
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "The selected file is not a valid image." }
+                var sample = 1
+                while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+                val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                val bitmap = context.contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, options)
+                } ?: throw IllegalStateException("This image format could not be opened on this device.")
+                val output = java.io.ByteArrayOutputStream()
+                if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, output)) {
+                    bitmap.recycle()
+                    throw IllegalStateException("Could not prepare this profile picture.")
+                }
+                bitmap.recycle()
+                val bytes = output.toByteArray()
+                require(bytes.isNotEmpty() && bytes.size <= 10 * 1024 * 1024) { "Profile pictures must be under 10 MB after processing." }
+
+                val path = userId + "/profile-" + UUID.randomUUID() + ".jpg"
                 val endpoint = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/elix-public/" + Uri.encode(path, "/")
                 val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 20000
-                    readTimeout = 60000
+                    connectTimeout = 30000
+                    readTimeout = 90000
                     doOutput = true
                     setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
                     setRequestProperty("Authorization", "Bearer " + token)
-                    setRequestProperty("Content-Type", mime)
+                    setRequestProperty("Content-Type", "image/jpeg")
+                    setRequestProperty("Cache-Control", "3600")
                     setRequestProperty("x-upsert", "true")
                     setFixedLengthStreamingMode(bytes.size)
-                    outputStream.use { it.write(bytes) }
                 }
+                connection.outputStream.use { it.write(bytes) }
                 val code = connection.responseCode
-                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
                 connection.disconnect()
-                if (code !in 200..299) throw IllegalStateException("Storage HTTP " + code + ": " + body)
-                Pair(true, BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-public/" + Uri.encode(path, "/"))
-            } catch (e: Exception) { Pair(false, e.message ?: "Image upload failed.") }
+                if (code !in 200..299) {
+                    val detail = body.ifBlank { "Storage rejected the upload without an error message." }
+                    throw IllegalStateException("Profile image upload failed (HTTP $code): $detail")
+                }
+                val publicUrl = BuildConfig.SUPABASE_URL.trimEnd('/') +
+                    "/storage/v1/object/public/elix-public/" + Uri.encode(path, "/")
+                Pair(true, publicUrl)
+            } catch (e: Exception) {
+                Pair(false, e.message ?: "Image upload failed. Please try again.")
+            }
             callback(result)
         }
     }
