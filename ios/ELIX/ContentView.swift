@@ -4,7 +4,7 @@ import PhotosUI
 
 private let supabaseURL = URL(string: "https://sumqnvpvtqpbbbytmbvk.supabase.co")!
 private let supabaseKey = "sb_publishable_-H-6950SAms-43NMmbM0xQ_rTz-lGl0"
-private let gold = Color(red: 0.84, green: 0.69, blue: 0.40)
+private let gold = Color(red: 0.0, green: 0.58, blue: 0.96)
 
 struct Ministry: Codable, Identifiable { let id: UUID; let name: String; var description: String?; var logo_url: String? }
 struct MediaItem: Codable, Identifiable { let id: UUID; let title: String; var description: String?; var media_type: String; var external_url: String?; var file_path: String?; var thumbnail_url: String?; var preacher: String? }
@@ -43,15 +43,15 @@ struct ContentView: View {
  @StateObject private var store=ELIXStore()
  var body: some View {
   Group { if store.signedIn { MainTabs().environmentObject(store).task{await store.load()} } else { AuthScreen().environmentObject(store) } }
-  .tint(gold).background(Color(red:0.035,green:0.04,blue:0.07))
+  .tint(gold).background(Color(red:0.98,green:0.98,blue:0.98))
  }
 }
 struct AuthScreen: View {
  @EnvironmentObject var store:ELIXStore; @State private var signup=false
  var body: some View { ZStack { Color(red:0.035,green:0.04,blue:0.07).ignoresSafeArea(); VStack(spacing:18){
-  Spacer(); Text("ELIX").font(.system(size:48,weight:.black,design:.rounded)).tracking(8).foregroundStyle(gold)
-  Text("CHRISTIAN MEDIA NETWORK").font(.caption).tracking(3).foregroundStyle(.white.opacity(0.7))
-  Text("Faith. Truth. Inspiration.").foregroundStyle(gold).padding(.bottom,22)
+  Spacer(); Text("elix").font(.system(size:52,weight:.black,design:.rounded)).tracking(-2).foregroundStyle(.black)
+  Text("CHRISTIAN MEDIA NETWORK").font(.caption).tracking(2).foregroundStyle(.secondary)
+  Text("Faith. Truth. Inspiration.").foregroundStyle(.secondary).padding(.bottom,22)
   if signup { TextField("Full name",text:$store.displayName).textContentType(.name).textFieldStyle(.roundedBorder) }
   TextField("Email address",text:$store.email).textInputAutocapitalization(.never).keyboardType(.emailAddress).textFieldStyle(.roundedBorder)
   SecureField("Password",text:$store.password).textFieldStyle(.roundedBorder)
@@ -68,7 +68,7 @@ struct MainTabs: View {
   DiscoverScreen().tabItem{Label("Discover",systemImage:"play.rectangle.fill")}
   ExploreScreen().tabItem{Label("Explore",systemImage:"safari.fill")}
   AccountScreen().tabItem{Label("Account",systemImage:"person.crop.circle")}
- }.toolbarBackground(Color.black,for:.tabBar).toolbarBackground(.visible,for:.tabBar) }
+ }.toolbarBackground(Color.white,for:.tabBar).toolbarBackground(.visible,for:.tabBar) }
 }
 struct HomeScreen: View {
  @EnvironmentObject var store:ELIXStore
@@ -92,7 +92,7 @@ struct FeedCard: View {
  let item:MediaItem
  var body: some View { ZStack(alignment:.bottomLeading) {
   if let s=item.external_url, let url=URL(string:s), item.media_type=="video" || item.media_type=="audio" { VideoPlayer(player:AVPlayer(url:url)).ignoresSafeArea() } else { LinearGradient(colors:[.black,.indigo.opacity(0.7),.black],startPoint:.topLeading,endPoint:.bottomTrailing); Image(systemName:item.media_type=="audio" ? "waveform":"play.rectangle.fill").font(.system(size:70)).foregroundStyle(gold.opacity(0.8)).frame(maxWidth:.infinity,maxHeight:.infinity) }
-  VStack(alignment:.leading,spacing:8){Text(item.title).font(.title2.bold());Text(item.preacher ?? "ELIX Creator").foregroundStyle(.white.opacity(0.8));Text(item.description ?? "").font(.subheadline).lineLimit(3)}.padding(26).frame(maxWidth:.infinity,alignment:.leading).background(LinearGradient(colors:[.clear,.black.opacity(0.85)],startPoint:.top,endPoint:.bottom))
+  VStack(alignment:.leading,spacing:8){Text(item.title).font(.title2.bold());Text(item.preacher ?? "ELIX Creator").foregroundStyle(.black.opacity(0.8));Text(item.description ?? "").font(.subheadline).lineLimit(3)}.padding(26).frame(maxWidth:.infinity,alignment:.leading).background(LinearGradient(colors:[.clear,.black.opacity(0.85)],startPoint:.top,endPoint:.bottom))
  }.frame(width:UIScreen.main.bounds.height,height:UIScreen.main.bounds.width) }
 }
 struct ExploreScreen: View {
@@ -106,7 +106,7 @@ struct AccountScreen: View {
  var body: some View { NavigationStack { VStack(spacing:18){Image(systemName:"person.crop.circle.fill").font(.system(size:70)).foregroundStyle(gold);Text("Your ELIX Account").font(.title2.bold());Text(store.email).foregroundStyle(.secondary);NavigationLink("Discover Creators"){ CreatorDirectoryView().environmentObject(store) }.foregroundStyle(gold).padding(.vertical,8)
  Button("Sign Out"){store.signOut()}.buttonStyle(.borderedProminent).tint(gold).foregroundStyle(.black)}.frame(maxWidth:.infinity,maxHeight:.infinity).background(Color.black).navigationTitle("Account") } }
 }
-private var gold:Color { Color(red:0.84,green:0.69,blue:0.40) }
+private var gold:Color { Color(red:0.0,green:0.58,blue:0.96) }
 private func empty(_ message:String)->some View { VStack(spacing:12){Image(systemName:"sparkles").font(.largeTitle).foregroundStyle(gold);Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center)}.frame(maxWidth:.infinity,maxHeight:.infinity).padding() }
 private var brandHeader:some View { VStack(alignment:.leading,spacing:6){Text("ELIX").font(.system(size:32,weight:.black)).tracking(5).foregroundStyle(gold);Text("CHRISTIAN MEDIA NETWORK").font(.caption2).tracking(2);Text("Faith. Truth. Inspiration.").font(.subheadline).foregroundStyle(.secondary)}.padding(.vertical,18) }
 
