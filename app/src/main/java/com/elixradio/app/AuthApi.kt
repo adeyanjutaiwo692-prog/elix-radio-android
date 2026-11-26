@@ -78,13 +78,20 @@ object AuthApi {
     fun currentRole(context: Context): String =
         context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("account_role", "listener").orEmpty()
 
+    fun currentRoleError(context: Context): String =
+        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("role_error", "").orEmpty()
+
     fun fetchRole(context: Context, callback: (String) -> Unit) {
         thread {
-            var role = "listener"
+            val prefs = context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE)
+            var role = currentRole(context)
+            var error = ""
             try {
                 val id = currentUserId(context)
                 val token = accessToken(context)
-                if (id.isNotBlank() && token.isNotBlank()) {
+                if (id.isBlank() || token.isBlank()) {
+                    error = "Missing signed-in user ID or access token."
+                } else {
                     val c = (URL(BuildConfig.SUPABASE_URL.trimEnd('/') +
                         "/rest/v1/profiles?select=role&id=eq.$id").openConnection() as HttpURLConnection).apply {
                         requestMethod = "GET"
@@ -94,15 +101,25 @@ object AuthApi {
                         setRequestProperty("Authorization", "Bearer $token")
                         setRequestProperty("Accept", "application/json")
                     }
-                    if (c.responseCode in 200..299) {
-                        val rows = org.json.JSONArray(c.inputStream.bufferedReader().use { it.readText() })
-                        if (rows.length() > 0) role = rows.getJSONObject(0).optString("role", "listener")
-                    }
+                    val code = c.responseCode
+                    val stream = if (code in 200..299) c.inputStream else c.errorStream
+                    val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                     c.disconnect()
+                    if (code !in 200..299) {
+                        error = "Supabase role check failed ($code): $raw"
+                    } else {
+                        val rows = org.json.JSONArray(raw)
+                        if (rows.length() > 0) {
+                            role = rows.getJSONObject(0).optString("role", role)
+                        } else {
+                            error = "Supabase returned no profile row for this signed-in account."
+                        }
+                    }
                 }
-            } catch (_: Exception) { }
-            context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).edit()
-                .putString("account_role", role).apply()
+            } catch (e: Exception) {
+                error = e.message ?: "Could not load account role."
+            }
+            prefs.edit().putString("account_role", role).putString("role_error", error).apply()
             callback(role)
         }
     }
