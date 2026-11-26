@@ -2,6 +2,7 @@ package com.elixradio.app
 
 import android.content.Context
 import android.net.Uri
+import android.util.Base64
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -11,10 +12,12 @@ import kotlin.concurrent.thread
 object UploadApi {
     data class Result(val ok: Boolean, val message: String)
 
+    private const val MAX_FILE_BYTES = 5L * 1024L * 1024L * 1024L
+    private const val CHUNK_BYTES = 6 * 1024 * 1024
+
     fun upload(context: Context, uri: Uri, title: String, callback: (Result) -> Unit) {
         thread {
-            var result: Result
-            try {
+            val result = try {
                 val token = AuthApi.accessToken(context)
                 val userId = AuthApi.currentUserId(context)
                 require(token.isNotBlank() && userId.isNotBlank()) { "Please sign in before uploading." }
@@ -26,10 +29,11 @@ object UploadApi {
                     mime.startsWith("image/") -> "image"
                     else -> throw IllegalArgumentException("Only audio, video, PDF and image files are supported.")
                 }
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("Could not read the selected file.")
-                require(bytes.isNotEmpty()) { "The selected file is empty." }
-                require(bytes.size <= 100 * 1024 * 1024) { "Maximum upload size is 100 MB." }
+                val size = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+                    ?: throw IllegalStateException("Could not read the selected file size.")
+                require(size > 0) { "The selected file is empty." }
+                require(size <= MAX_FILE_BYTES) { "Maximum upload size is 5 GB." }
+
                 val ext = when (mime) {
                     "audio/mpeg" -> "mp3"
                     "audio/mp4" -> "m4a"
@@ -45,23 +49,86 @@ object UploadApi {
                     else -> "bin"
                 }
                 val path = "$userId/${UUID.randomUUID()}.$ext"
-                val base = BuildConfig.SUPABASE_URL.trimEnd('/')
-                val storage = (URL("$base/storage/v1/object/elix-media/$path").openConnection() as HttpURLConnection).apply {
+                val projectRef = BuildConfig.SUPABASE_URL.substringAfter("https://").substringBefore(".")
+                val endpoint = "https://$projectRef.storage.supabase.co/storage/v1/upload/resumable"
+                val metadata = listOf(
+                    "bucketName" to "elix-media",
+                    "objectName" to path,
+                    "contentType" to mime,
+                    "cacheControl" to "3600"
+                ).joinToString(",") { (key, value) ->
+                    "$key ${Base64.encodeToString(value.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)}"
+                }
+
+                val create = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 30000
-                    readTimeout = 60000
+                    readTimeout = 30000
                     doOutput = true
+                    setRequestProperty("Tus-Resumable", "1.0.0")
+                    setRequestProperty("Upload-Length", size.toString())
+                    setRequestProperty("Upload-Metadata", metadata)
                     setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
                     setRequestProperty("Authorization", "Bearer $token")
-                    setRequestProperty("Content-Type", mime)
-                    setRequestProperty("x-upsert", "false")
-                    outputStream.use { it.write(bytes) }
                 }
-                val storageCode = storage.responseCode
-                val storageBody = (if (storageCode in 200..299) storage.inputStream else storage.errorStream)
+                val createCode = create.responseCode
+                val uploadLocation = create.getHeaderField("Location")
+                val createError = (if (createCode in 200..299) create.inputStream else create.errorStream)
                     ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                storage.disconnect()
-                if (storageCode !in 200..299) throw IllegalStateException("File upload failed: $storageBody")
+                create.disconnect()
+                if (createCode !in 200..299 || uploadLocation.isNullOrBlank()) {
+                    throw IllegalStateException("Could not start resumable upload: $createError")
+                }
+                val uploadUrl = URL(URL(endpoint), uploadLocation).toString()
+
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    var offset = 0L
+                    val buffer = ByteArray(CHUNK_BYTES)
+                    while (offset < size) {
+                        val wanted = minOf(CHUNK_BYTES.toLong(), size - offset).toInt()
+                        var count = 0
+                        while (count < wanted) {
+                            val n = input.read(buffer, count, wanted - count)
+                            if (n < 0) throw IllegalStateException("File ended before the expected size.")
+                            count += n
+                        }
+
+                        var sent = false
+                        var lastError = "Upload interrupted."
+                        repeat(3) {
+                            if (!sent) {
+                                try {
+                                    val patch = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
+                                        requestMethod = "PATCH"
+                                        connectTimeout = 30000
+                                        readTimeout = 120000
+                                        doOutput = true
+                                        setFixedLengthStreamingMode(count)
+                                        setRequestProperty("Tus-Resumable", "1.0.0")
+                                        setRequestProperty("Upload-Offset", offset.toString())
+                                        setRequestProperty("Content-Type", "application/offset+octet-stream")
+                                        setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
+                                        setRequestProperty("Authorization", "Bearer $token")
+                                    }
+                                    patch.outputStream.use { it.write(buffer, 0, count) }
+                                    val code = patch.responseCode
+                                    val body = (if (code in 200..299) patch.inputStream else patch.errorStream)
+                                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                    patch.disconnect()
+                                    if (code == 204) {
+                                        sent = true
+                                    } else {
+                                        lastError = "Chunk upload failed ($code): $body"
+                                    }
+                                } catch (e: Exception) {
+                                    lastError = e.message ?: "Network error during upload."
+                                }
+                            }
+                        }
+                        if (!sent) throw IllegalStateException(lastError)
+                        offset += count
+                    }
+                } ?: throw IllegalStateException("Could not open the selected file.")
 
                 val row = JSONObject()
                     .put("uploaded_by", userId)
@@ -70,7 +137,7 @@ object UploadApi {
                     .put("media_type", mediaType)
                     .put("file_path", path)
                     .put("rights_confirmed", true)
-                val record = (URL("$base/rest/v1/media_items").openConnection() as HttpURLConnection).apply {
+                val record = (URL(BuildConfig.SUPABASE_URL.trimEnd('/') + "/rest/v1/media_items").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 20000
                     readTimeout = 20000
@@ -86,9 +153,9 @@ object UploadApi {
                     ?.bufferedReader()?.use { it.readText() }.orEmpty()
                 record.disconnect()
                 if (recordCode !in 200..299) throw IllegalStateException("File uploaded but catalogue publishing failed: $recordBody")
-                result = Result(true, "Uploaded successfully. It is now available in ELIX Radio.")
+                Result(true, "Uploaded successfully. It is now available in ELIX Radio.")
             } catch (e: Exception) {
-                result = Result(false, e.message ?: "Upload failed.")
+                Result(false, e.message ?: "Upload failed.")
             }
             callback(result)
         }
