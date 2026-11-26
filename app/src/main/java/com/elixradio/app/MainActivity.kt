@@ -190,9 +190,13 @@ class MainActivity : Activity() {
     private fun showCreatorPage(pageId: String) {
         base("Home", "Ministry & creator channel", "PAGE", "Explore this page’s complete content and programmes.")
         val profile = card(content); text(profile, "Loading page…", 13, muted, false)
-        SupabaseApi.getWithError(this, "ministries?select=id,name,description,city,page_type&id=eq.$pageId&limit=1") { pages, error ->
+        SupabaseApi.getWithError(this, "ministries?select=id,name,description,city,page_type,logo_url&id=eq.$pageId&limit=1") { pages, error ->
             runOnUiThread { profile.removeAllViews(); if (error != null || pages.length() == 0) text(profile, "Page could not be loaded.", 13, signalRed, false) else {
-                val p = pages.getJSONObject(0); text(profile, p.optString("name"), 23, white, true); text(profile, p.optString("page_type").replace("_"," ").uppercase() + " • " + p.optString("city","Nigeria"), 12, gold, true); text(profile, p.optString("description"), 14, muted, false)
+                val p = pages.getJSONObject(0)
+                val logo = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.LTGRAY) } }
+                profile.addView(logo, LinearLayout.LayoutParams(dp(92), dp(92)))
+                if (p.optString("logo_url").isNotBlank()) loadRemoteImage(p.optString("logo_url"), logo)
+                text(profile, p.optString("name"), 23, white, true); text(profile, p.optString("page_type").replace("_"," ").uppercase() + " • " + p.optString("city","Nigeria"), 12, gold, true); text(profile, p.optString("description"), 14, muted, false)
                 val followerCount = TextView(this).apply { textSize = 13f; setTextColor(muted) }
                 profile.addView(followerCount)
                 val followButton = Button(this).apply { isAllCaps = false }
@@ -1057,7 +1061,7 @@ class MainActivity : Activity() {
         content.addView(View(this).apply { setBackgroundColor(Color.rgb(225,225,225)) }, LinearLayout.LayoutParams(-1, dp(1)))
         val grid = android.widget.GridLayout(this).apply { columnCount = 3; useDefaultMargins = false }
         content.addView(grid, fullWidth())
-        SupabaseApi.getWithError(this, "media_items?select=id,title,description,kind,media_type,file_path,status&uploaded_by=eq.$userId&order=created_at.desc&limit=90") { rows, error ->
+        SupabaseApi.getWithError(this, "media_items?select=id,title,description,kind,media_type,file_path,thumbnail_url,status&uploaded_by=eq.$userId&order=created_at.desc&limit=90") { rows, error ->
             runOnUiThread {
                 grid.removeAllViews()
                 if (error != null) { text(content, "Your posts could not load: $error", 12, signalRed, false); return@runOnUiThread }
@@ -1075,11 +1079,12 @@ class MainActivity : Activity() {
                         }
                         val label = TextView(this).apply { text = when(mediaType) { "video" -> "▶"; "audio" -> "♫"; "pdf" -> "PDF"; else -> item.optString("title").take(18) }; textSize = if (mediaType == "image") 11f else 30f; gravity = Gravity.CENTER; setTextColor(Color.DKGRAY) }
                         tile.addView(label, FrameLayout.LayoutParams(-1,-1))
-                        if (mediaType == "image") {
+                        val thumbnail = item.optString("thumbnail_url")
+                        if (thumbnail.isNotBlank() || mediaType == "image") {
                             val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
                             tile.addView(image, FrameLayout.LayoutParams(-1,-1))
-                            val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(item.optString("file_path"), "/")
-                            Thread { try { val bitmap = URL(url).openStream().use { BitmapFactory.decodeStream(it) }; runOnUiThread { if (bitmap != null && image.parent != null) image.setImageBitmap(bitmap) } } catch (_: Exception) { } }.start()
+                            val url = if (thumbnail.isNotBlank()) thumbnail else BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(item.optString("file_path"), "/")
+                            loadRemoteImage(url, image)
                         }
                         grid.addView(tile)
                     }
