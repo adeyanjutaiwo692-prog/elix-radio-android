@@ -933,7 +933,7 @@ class MainActivity : Activity() {
                         text(list, item.optString("title", "ELIX media"), 16, gold, true)
                         text(list, mediaType.uppercase(), 11, muted, false)
                         button(list, if (mediaType == "audio") "▶  PLAY AUDIO" else "OPEN FILE") {
-                            if (mediaType == "audio") playAudio(item.optString("title", "ELIX Radio"), path) else openMedia(path)
+                            if (mediaType == "audio") playAudio(item.optString("title", "ELIX Radio"), path) else openMedia(path, mediaType)
                         }
                         space(list, 12)
                     }
