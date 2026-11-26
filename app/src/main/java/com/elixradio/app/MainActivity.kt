@@ -228,9 +228,25 @@ class MainActivity : Activity() {
     private fun showLiveRadio() {
         base("Live Radio", "Live audio broadcast", "LIVE RADIO", "A real-time audio session, separate from recorded audio and live video.")
         val panel = card(content)
-        text(panel, "●  LIVE AUDIO", 13, signalRed, true)
-        text(panel, "No live radio session is configured yet. An authorised audio stream URL must be added by the ELIX administrator before listeners can tune in.", 14, muted, false)
-        notice(content, "This is a separate live audio service. Recorded audio is under ELIX Radio; live video is under Live Video.")
+        text(panel, "●  CHECKING LIVE AUDIO", 13, signalRed, true)
+        SupabaseApi.getWithError(this, "live_streams?select=title,playback_url,protocol,state&stream_type=eq.audio&state=eq.live&is_authorised=eq.true") { rows, error ->
+            runOnUiThread {
+                panel.removeAllViews()
+                if (error != null) {
+                    text(panel, "Live radio setup is not available yet: $error", 12, muted, false)
+                } else if (rows.length() == 0) {
+                    text(panel, "No live radio session is on air right now.", 15, white, true)
+                    text(panel, "An ELIX administrator must add and authorise an audio stream before listeners can tune in.", 13, muted, false)
+                } else {
+                    for (i in 0 until rows.length()) {
+                        val stream = rows.getJSONObject(i)
+                        text(panel, stream.optString("title", "ELIX Live Radio"), 17, gold, true)
+                        button(panel, "▶  LISTEN LIVE") { playStream(stream.optString("playback_url"), stream.optString("title", "ELIX Live Radio")) }
+                    }
+                }
+            }
+        }
+        notice(content, "Live Radio is for real-time audio. Recorded audio is under ELIX Radio; live video is under Live Video.")
     }
 
     private fun playAudio(title: String, path: String) {
