@@ -159,7 +159,7 @@ class MainActivity : Activity() {
         base("Home", "Discover Christian voices", "MINISTRIES & PAGES", "Find ministries and Christian public figures. Open a page to explore their content and programmes.")
         if (AuthApi.isSignedIn(this)) button(content, "＋  CREATE A PAGE") { createPageDialog() }
         val list = card(content); text(list, "Loading pages…", 13, muted, false)
-        SupabaseApi.getWithError(this, "ministries?select=id,name,city,page_type,description&approved=eq.true&order=name.asc&limit=200") { rows, error ->
+        SupabaseApi.getWithError(this, "ministries?select=id,name,city,page_type,description,owner_id&or=(approved.eq.true,owner_id.eq.${AuthApi.currentUserId(this)})&order=name.asc&limit=200") { rows, error ->
             runOnUiThread { list.removeAllViews();
                 if (error != null) text(list, error, 12, signalRed, false)
                 else if (rows.length() == 0) text(list, "No public pages yet. Create an account and submit the first page.", 14, muted, false)
@@ -231,15 +231,79 @@ class MainActivity : Activity() {
         button(content, "BACK TO PAGES") { showHome() }
     }
 
-    private fun createPageDialog() {
-        val name=android.widget.EditText(this).apply { hint="Ministry or public figure name"; setTextColor(white) }
-        val desc=android.widget.EditText(this).apply { hint="Short description"; setTextColor(white) }
-        val city=android.widget.EditText(this).apply { hint="City / location"; setTextColor(white) }
-        val type=android.widget.Spinner(this).apply { adapter=android.widget.ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("Ministry","Public figure")) }
-        val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),0); addView(name); addView(type); addView(desc); addView(city) }
-        android.app.AlertDialog.Builder(this).setTitle("Create public page").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Submit",null).create().also { d -> d.setOnShowListener { d.getButton(-1).setOnClickListener { val n=name.text.toString().trim(); if(n.isBlank()){name.error="Enter a name";return@setOnClickListener}; val slug=n.lowercase().replace(Regex("[^a-z0-9]+"),"-").trim('-')+"-"+System.currentTimeMillis().toString().takeLast(5); val body=JSONObject().put("name",n).put("slug",slug).put("description",desc.text.toString()).put("city",city.text.toString()).put("page_type",if(type.selectedItemPosition==1)"public_figure" else "ministry").put("owner_id",AuthApi.currentUserId(this)); SupabaseApi.postWithError(this,"ministries",body){ e -> runOnUiThread { info(if(e==null)"Page submitted for ELIX approval." else "Page creation failed: $e"); if(e==null)showAccount() } }; d.dismiss() } }; d.show() }
+    private fun showPageManager(page: JSONObject) {
+        val pageId = page.optString("id")
+        selectedPageId = pageId
+        base("Account", "Page account", page.optString("name"), "Your ministry's independent publishing and management space.")
+        text(content, "PAGE CONTENT STUDIO", 13, gold, true)
+        tile(content, "Audio messages & podcasts", "Upload sermons, worship, teaching, interviews and podcasts.") { selectedPageId = pageId; selectedUploadType = "audio"; chooseUploadFile() }
+        tile(content, "Videos & short clips", "Upload sermons, testimonies, teaching, event videos and shorts.") { selectedPageId = pageId; selectedUploadType = "video"; chooseUploadFile() }
+        tile(content, "Images & announcements", "Publish flyers, photos, banners and ministry announcements.") { selectedPageId = pageId; selectedUploadType = "image"; chooseUploadFile() }
+        tile(content, "Books & eBooks", "Upload PDF books, study guides, devotionals and resources.") { selectedPageId = pageId; selectedUploadType = "pdf"; chooseUploadFile() }
+        tile(content, "Write a post", "Share teachings, updates, testimonies and articles.") { createPageTextContent(pageId, "post") }
+        tile(content, "Create a story", "Publish a short ministry update or announcement.") { createPageTextContent(pageId, "story") }
+        tile(content, "Live broadcasts", "Open live radio and live video tools.") { showBroadcasts() }
+        tile(content, "Programmes & events", "Services, conferences, crusades and event listings.") { showUpcoming() }
+        text(content, "PUBLISHED PAGE MEDIA", 16, white, true)
+        val media = card(content)
+        SupabaseApi.getWithError(this, "media_items?select=id,title,media_type,kind&ministry_id=eq.$pageId&order=created_at.desc&limit=100") { rows, error ->
+            runOnUiThread {
+                media.removeAllViews()
+                if (error != null) text(media, "Could not load page content: $error", 12, signalRed, false)
+                else if (rows.length() == 0) text(media, "Your page is ready. Start publishing content above.", 13, muted, false)
+                else for (i in 0 until rows.length()) { val item = rows.getJSONObject(i); text(media, item.optString("title"), 14, white, true); text(media, item.optString("media_type").uppercase() + " · " + item.optString("kind").replace("_", " "), 11, muted, false) }
+            }
+        }
+        button(content, "VIEW PUBLIC PAGE") { showCreatorPage(pageId) }
+        button(content, "BACK TO MY PAGES") { showMyPages() }
     }
 
+    private fun createPageTextContent(pageId: String, type: String) {
+        val title = android.widget.EditText(this).apply { hint = "Heading"; setTextColor(white) }
+        val body = android.widget.EditText(this).apply { hint = "Write your ministry update…"; setTextColor(white); minLines = 4; gravity = Gravity.TOP }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), 0); addView(title); addView(body) }
+        val dialog = android.app.AlertDialog.Builder(this).setTitle(if (type == "story") "Create page story" else "Write page post").setView(box).setNegativeButton("Cancel", null).setPositiveButton("PUBLISH", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(-1).setOnClickListener {
+                val heading = title.text.toString().trim()
+                val textBody = body.text.toString().trim()
+                if (heading.isBlank() || textBody.isBlank()) { info("Add a heading and content first."); return@setOnClickListener }
+                val data = JSONObject().put("ministry_id", pageId).put("content_type", type).put("title", heading).put("body", textBody).put("created_by", AuthApi.currentUserId(this))
+                SupabaseApi.postWithError(this, "ministry_publications", data) { error ->
+                    runOnUiThread { info(if (error == null) "Published to your page." else "Could not publish: $error"); if (error == null) showMyPages() }
+                }
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun createPageDialog() {
+        if (!AuthApi.isSignedIn(this)) { info("Sign in before creating a page."); return }
+        val name = android.widget.EditText(this).apply { hint = "Ministry or public figure name"; setTextColor(white) }
+        val desc = android.widget.EditText(this).apply { hint = "About this page"; setTextColor(white); minLines = 2 }
+        val city = android.widget.EditText(this).apply { hint = "City / location"; setTextColor(white) }
+        val type = android.widget.Spinner(this).apply { adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("Ministry", "Church", "Christian organisation", "Public figure", "Christian author", "Christian artist")) }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), 0); addView(name); addView(type); addView(desc); addView(city) }
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Create a ministry page").setMessage("Create a separate public account for your ministry or Christian work.").setView(box).setNegativeButton("Cancel", null).setPositiveButton("CREATE PAGE", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(-1).setOnClickListener {
+                val n = name.text.toString().trim()
+                if (n.isBlank()) { name.error = "Enter a page name"; return@setOnClickListener }
+                val slug = n.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-') + "-" + System.currentTimeMillis().toString().takeLast(6)
+                val kind = when (type.selectedItemPosition) { 1 -> "church"; 2 -> "organisation"; 3 -> "public_figure"; 4 -> "author"; 5 -> "artist"; else -> "ministry" }
+                val data = JSONObject().put("name", n).put("slug", slug).put("description", desc.text.toString().trim()).put("city", city.text.toString().trim()).put("page_type", kind).put("owner_id", AuthApi.currentUserId(this)).put("approved", true)
+                dialog.getButton(-1).isEnabled = false
+                SupabaseApi.postWithError(this, "ministries", data) { error ->
+                    runOnUiThread {
+                        if (error == null) { info("Your page account has been created."); showMyPages() }
+                        else { info("Page creation failed: $error"); dialog.getButton(-1).isEnabled = true }
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
 
     private fun editProfileDialog() {
         val name = android.widget.EditText(this).apply { hint = "Display name"; setText(AuthApi.currentName(this@MainActivity)); setTextColor(white) }
@@ -963,8 +1027,9 @@ class MainActivity : Activity() {
                 else if (rows.length() == 0) text(pages, "No pages created yet.", 13, muted, false)
                 else for (i in 0 until rows.length()) {
                     val p = rows.getJSONObject(i)
-                    tile(pages, p.optString("name"), p.optString("page_type").uppercase() + if (p.optBoolean("approved")) " • PUBLIC" else " • PENDING") { showCreatorPage(p.optString("id")) }
-                    button(pages, "EDIT PAGE") { editPageDialog(p) }
+                    tile(pages, p.optString("name"), p.optString("page_type").replace("_", " ").uppercase() + if (p.optBoolean("approved")) " • ACTIVE PAGE" else " • AWAITING REVIEW") { showPageManager(p) }
+                    button(pages, "OPEN PAGE ACCOUNT & CONTENT STUDIO") { showPageManager(p) }
+                    button(pages, "EDIT PAGE PROFILE") { editPageDialog(p) }
                 }
             }
         }
