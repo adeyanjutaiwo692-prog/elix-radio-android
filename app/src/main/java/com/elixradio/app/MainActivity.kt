@@ -807,6 +807,7 @@ class MainActivity : Activity() {
         if (!AuthApi.isSignedIn(this)) { button(content,"CREATE ACCOUNT"){showAuthDialog(true)}; button(content,"SIGN IN"){showAuthDialog(false)}; notice(content,"Create an account to publish under your profile or manage a ministry/public-figure page."); return }
         text(content,AuthApi.currentName(this).ifBlank{"ELIX member"},21,white,true); text(content,"Account role: "+AuthApi.currentRole(this).replace("_"," ").uppercase(),12,muted,true)
         button(content,"⚙ ACCOUNT SETTINGS / EDIT PROFILE"){ editProfileDialog() }
+        button(content,"👥 DISCOVER CREATORS"){ showCreatorDirectory() }
         button(content,"＋ CREATE MINISTRY / PUBLIC FIGURE PAGE"){createPageDialog()}; button(content,"＋ UPLOAD CONTENT"){chooseUploadFile()}
         text(content,"MY PAGES",16,white,true); val pages=card(content)
         SupabaseApi.getWithError(this,"ministries?select=id,name,description,city,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc"){ rows,e -> runOnUiThread { pages.removeAllViews(); if(e!=null||rows.length()==0)text(pages,"You have not created a page yet.",13,muted,false) else for(i in 0 until rows.length()){val p=rows.getJSONObject(i); tile(pages,p.optString("name"),p.optString("page_type").uppercase()+" • "+if(p.optBoolean("approved"))"PUBLIC" else "AWAITING APPROVAL"){showCreatorPage(p.optString("id"))}; button(pages,"EDIT PAGE PROFILE"){editPageDialog(p)}} } }
@@ -815,6 +816,76 @@ class MainActivity : Activity() {
         if(AuthApi.currentRole(this)=="super_admin")button(content,"⚙ OPEN DEVELOPER DASHBOARD"){showDeveloperDashboard()}
         button(content,"SIGN OUT"){AuthApi.signOut(this);showAccount()}
     }
+    private fun showCreatorDirectory() {
+        base("Account", "ELIX creator community", "DISCOVER CREATORS", "Find Christian creators, follow their accounts and explore everything they publish.")
+        val list = card(content)
+        text(list, "Loading creators…", 13, muted, false)
+        SupabaseApi.getWithError(this, "profiles?select=id,display_name,created_at&order=created_at.desc&limit=200") { rows, error ->
+            runOnUiThread {
+                list.removeAllViews()
+                if (error != null) text(list, "Creator directory could not load: $error", 12, signalRed, false)
+                else if (rows.length() == 0) text(list, "No creator profiles found yet.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val creator = rows.getJSONObject(i)
+                    val id = creator.optString("id")
+                    if (id == AuthApi.currentUserId(this)) continue
+                    val name = creator.optString("display_name").ifBlank { "ELIX Creator" }
+                    tile(list, name, "Open creator profile") { showCreatorProfile(id, name) }
+                }
+            }
+        }
+        button(content, "BACK TO MY ACCOUNT") { showAccount() }
+    }
+
+    private fun showCreatorProfile(creatorId: String, creatorName: String) {
+        base("Account", "Creator profile", creatorName, "Follow this creator and browse their published Christian content.")
+        val profile = card(content)
+        text(profile, "Loading profile…", 13, muted, false)
+        val follow = Button(this).apply { isAllCaps = false }
+        if (AuthApi.isSignedIn(this) && creatorId != AuthApi.currentUserId(this)) content.addView(follow, fullWidth())
+        fun refresh() {
+            SupabaseApi.getWithError(this, "creator_follower_counts?select=follower_count&creator_id=eq.$creatorId&limit=1") { counts, countError ->
+                SupabaseApi.getWithError(this, "creator_follows?select=follower_id&creator_id=eq.$creatorId") { followers, _ ->
+                    SupabaseApi.getWithError(this, "creator_follows?select=creator_id&creator_id=eq.$creatorId&follower_id=eq.\${AuthApi.currentUserId(this)}&limit=1") { mine, mineError ->
+                        runOnUiThread {
+                            profile.removeAllViews()
+                            text(profile, creatorName, 22, white, true)
+                            val total = if (countError == null && counts.length() > 0) counts.getJSONObject(0).optLong("follower_count") else followers.length().toLong()
+                            text(profile, "$total followers", 13, gold, true)
+                            if (AuthApi.isSignedIn(this) && creatorId != AuthApi.currentUserId(this)) {
+                                val following = mineError == null && mine.length() > 0
+                                follow.text = if (following) "FOLLOWING · UNFOLLOW" else "＋ FOLLOW"
+                                follow.setOnClickListener {
+                                    if (following) SupabaseApi.deleteWithError(this, "creator_follows?follower_id=eq.\${AuthApi.currentUserId(this)}&creator_id=eq.$creatorId") { e -> runOnUiThread { info(if (e == null) "Unfollowed $creatorName." else "Could not unfollow: $e"); refresh() } }
+                                    else SupabaseApi.postWithError(this, "creator_follows", JSONObject().put("follower_id", AuthApi.currentUserId(this)).put("creator_id", creatorId)) { e -> runOnUiThread { info(if (e == null) "You are now following $creatorName." else "Could not follow: $e"); refresh() } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        refresh()
+        text(content, "PUBLISHED CONTENT", 16, white, true)
+        val uploads = card(content)
+        SupabaseApi.getWithError(this, "media_items?select=id,title,description,kind,media_type,file_path,status&uploaded_by=eq.$creatorId&status=eq.approved&order=created_at.desc&limit=100") { rows, error ->
+            runOnUiThread {
+                uploads.removeAllViews()
+                if (error != null) text(uploads, "Could not load creator content: $error", 12, signalRed, false)
+                else if (rows.length() == 0) text(uploads, "This creator has not published anything yet.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val item = rows.getJSONObject(i)
+                    text(uploads, item.optString("title"), 15, gold, true)
+                    text(uploads, item.optString("media_type").uppercase() + " • " + item.optString("kind").uppercase(), 11, muted, false)
+                    button(uploads, if (item.optString("media_type") == "audio") "▶ PLAY AUDIO" else "OPEN CONTENT") {
+                        if (item.optString("media_type") == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path"))
+                    }
+                }
+            }
+        }
+        button(content, "BACK TO CREATORS") { showCreatorDirectory() }
+    }
+
     private fun showAuthDialog(create: Boolean) {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
