@@ -444,8 +444,15 @@ class MainActivity : Activity() {
         val pageId = item.optString("ministry_id")
         if (pageId.isBlank()) { info("This post is not linked to a ministry page yet."); return }
         if (!AuthApi.isSignedIn(this)) { showAccount(); return }
-        val body = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)
-        SupabaseApi.postWithError(this, "ministry_follows", body) { e -> runOnUiThread { info(if (e == null) "Following this page." else "Follow could not be saved: $e") } }
+        val userId = AuthApi.currentUserId(this)
+        SupabaseApi.getWithError(this, "ministry_follows?select=user_id&user_id=eq.$userId&ministry_id=eq.$pageId&limit=1") { rows, e ->
+            if (e != null) { runOnUiThread { info("Could not check follow status: $e") }; return@getWithError }
+            if (rows.length() > 0) SupabaseApi.deleteWithError(this, "ministry_follows?user_id=eq.$userId&ministry_id=eq.$pageId") { err ->
+                runOnUiThread { info(if (err == null) "Unfollowed creator." else "Could not unfollow: $err") }
+            } else SupabaseApi.postWithError(this, "ministry_follows", JSONObject().put("user_id", userId).put("ministry_id", pageId)) { err ->
+                runOnUiThread { info(if (err == null) "Following creator." else "Follow could not be saved: $err") }
+            }
+        }
     }
 
     private fun subscribeCurrentCreator() {
@@ -776,7 +783,7 @@ class MainActivity : Activity() {
         text(content,"MY PAGES",16,white,true); val pages=card(content)
         SupabaseApi.getWithError(this,"ministries?select=id,name,description,city,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc"){ rows,e -> runOnUiThread { pages.removeAllViews(); if(e!=null||rows.length()==0)text(pages,"You have not created a page yet.",13,muted,false) else for(i in 0 until rows.length()){val p=rows.getJSONObject(i); tile(pages,p.optString("name"),p.optString("page_type").uppercase()+" • "+if(p.optBoolean("approved"))"PUBLIC" else "AWAITING APPROVAL"){showCreatorPage(p.optString("id"))}; button(pages,"EDIT PAGE PROFILE"){editPageDialog(p)}} } }
         text(content,"MY UPLOADS & CONTENT MANAGEMENT",16,white,true); val uploads=card(content)
-        SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}; button(uploads,"DELETE UPLOAD"){confirmDeleteUpload(item)}} } }
+        SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status,file_path&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}; button(uploads,"DELETE UPLOAD"){confirmDeleteUpload(item)}} } }
         if(AuthApi.currentRole(this)=="super_admin")button(content,"⚙ OPEN DEVELOPER DASHBOARD"){showDeveloperDashboard()}
         button(content,"SIGN OUT"){AuthApi.signOut(this);showAccount()}
     }
