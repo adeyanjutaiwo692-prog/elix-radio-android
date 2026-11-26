@@ -79,20 +79,21 @@ class MainActivity : Activity() {
 
     private fun setNav(active: String) {
         nav.removeAllViews()
-        listOf("Home", "Discover", "Account", "Broadcasts").forEach { label ->
+        listOf("Home", "Discover", "Explore", "Account").forEach { label ->
+            val symbol = when(label) { "Home" -> "⌂"; "Discover" -> "▶"; "Explore" -> "◎"; else -> "◉" }
             val b = TextView(this).apply {
-                text = label
-                textSize = 10f
+                text = "$symbol\\n$label"
+                textSize = 11f
                 gravity = Gravity.CENTER
                 setTypeface(null, if (label == active) Typeface.BOLD else Typeface.NORMAL)
                 setTextColor(if (label == active) Color.rgb(48, 145, 255) else muted)
-                setPadding(dp(3), dp(8), dp(3), dp(8))
+                setPadding(dp(2), dp(4), dp(2), dp(4))
                 setOnClickListener {
                     when (label) {
                         "Home" -> showHome()
                         "Discover" -> showDiscover()
+                        "Explore" -> showExploreHub()
                         "Account" -> showAccount()
-                        "Broadcasts" -> showBroadcasts()
                     }
                 }
             }
@@ -141,6 +142,16 @@ class MainActivity : Activity() {
         }
         text(content, "DISCOVER SOMETHING NEW", 16, white, true)
         tile(content, "Discover videos, audio and images", "Swipe through autoplaying Christian content.") { showDiscover() }
+    }
+
+    private fun showExploreHub() {
+        base("Explore", "Explore ELIX", "DISCOVER", "Find ministries, books, eBooks, libraries, radio and live broadcasts.")
+        tile(content, "MINISTRIES & PUBLIC FIGURES", "Explore ministry and creator pages.") { showHome() }
+        tile(content, "LIBRARY & EBOOKS", "Browse Christian books and digital resources.") { showLibrary() }
+        tile(content, "RADIO", "Listen to ELIX Radio and audio programmes.") { showRadio() }
+        tile(content, "LIVE RADIO", "Listen to live audio broadcasts.") { showLiveRadio() }
+        tile(content, "LIVE VIDEO", "Watch live ministry broadcasts.") { showLive() }
+        tile(content, "UPCOMING PROGRAMMES", "Conferences, services and events.") { showUpcoming() }
     }
 
     private fun showBroadcasts() {
@@ -275,6 +286,38 @@ class MainActivity : Activity() {
         val share = Button(this).apply { text = "↗"; isAllCaps = false; setOnClickListener { shareCurrentFeedItem() } }
         controls.addView(share, LinearLayout.LayoutParams(0, dp(48), 1f))
         overlay.addView(controls)
+        val actionRail = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(5), dp(8), dp(5), dp(8))
+            background = GradientDrawable().apply { setColor(0x55000000); cornerRadius = dp(18).toFloat() }
+        }
+        fun railAction(symbol: String, label: String, action: () -> Unit) {
+            val item = TextView(this).apply {
+                text = "$symbol\\n$label"
+                gravity = Gravity.CENTER
+                textSize = 11f
+                setTextColor(white)
+                setTypeface(null, Typeface.BOLD)
+                setPadding(dp(5), dp(8), dp(5), dp(8))
+                setOnClickListener { action() }
+            }
+            actionRail.addView(item, LinearLayout.LayoutParams(dp(62), dp(58)))
+        }
+        railAction("＋", "FOLLOW") { followCurrentCreator() }
+        railAction("♡", "LIKE") {
+            val item = homeFeedItems.getOrNull(homeFeedIndex)
+            if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "like"); info("Liked") }
+        }
+        railAction("▣", "SAVE") {
+            val item = homeFeedItems.getOrNull(homeFeedIndex)
+            if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "save"); info("Saved to your library") }
+        }
+        railAction("↗", "SHARE") { shareCurrentFeedItem() }
+        railAction("★", "SUBSCRIBE") { subscribeCurrentCreator() }
+        val railParams = FrameLayout.LayoutParams(dp(70), -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL)
+        railParams.rightMargin = dp(8)
+        frame.addView(actionRail, railParams)
         val feedback = Button(this).apply { text = "⋯  NOT INTERESTED"; isAllCaps = false; setOnClickListener {
             val item = homeFeedItems.getOrNull(homeFeedIndex)
             if (item != null) FeedEngagementApi.record(this@MainActivity, item.optString("id"), "not_interested")
@@ -321,6 +364,24 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun followCurrentCreator() {
+        val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
+        val pageId = item.optString("ministry_id")
+        if (pageId.isBlank()) { info("This post is not linked to a ministry page yet."); return }
+        if (!AuthApi.isSignedIn(this)) { showAccount(); return }
+        val body = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)
+        SupabaseApi.postWithError(this, "ministry_follows", body) { e -> runOnUiThread { info(if (e == null) "Following this page." else "Follow could not be saved: $e") } }
+    }
+
+    private fun subscribeCurrentCreator() {
+        val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
+        val pageId = item.optString("ministry_id")
+        if (pageId.isBlank()) { info("This post is not linked to a ministry page yet."); return }
+        if (!AuthApi.isSignedIn(this)) { showAccount(); return }
+        val body = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)
+        SupabaseApi.postWithError(this, "subscriptions", body) { e -> runOnUiThread { info(if (e == null) "Subscribed to this page." else "Subscription could not be saved: $e") } }
     }
 
     private var feedTouchY = 0f
