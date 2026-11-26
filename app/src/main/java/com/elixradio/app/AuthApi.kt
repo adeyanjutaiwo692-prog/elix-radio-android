@@ -75,6 +75,38 @@ object AuthApi {
         }
     }
 
+    fun currentRole(context: Context): String =
+        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("account_role", "listener").orEmpty()
+
+    fun fetchRole(context: Context, callback: (String) -> Unit) {
+        thread {
+            var role = "listener"
+            try {
+                val id = currentUserId(context)
+                val token = accessToken(context)
+                if (id.isNotBlank() && token.isNotBlank()) {
+                    val c = (URL(BuildConfig.SUPABASE_URL.trimEnd('/') +
+                        "/rest/v1/profiles?select=role&id=eq.$id").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 12000
+                        readTimeout = 12000
+                        setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
+                        setRequestProperty("Authorization", "Bearer $token")
+                        setRequestProperty("Accept", "application/json")
+                    }
+                    if (c.responseCode in 200..299) {
+                        val rows = org.json.JSONArray(c.inputStream.bufferedReader().use { it.readText() })
+                        if (rows.length() > 0) role = rows.getJSONObject(0).optString("role", "listener")
+                    }
+                    c.disconnect()
+                }
+            } catch (_: Exception) { }
+            context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).edit()
+                .putString("account_role", role).apply()
+            callback(role)
+        }
+    }
+
     fun signOut(context: Context) {
         val prefs = context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE)
         val token = prefs.getString("access_token", null)
@@ -99,6 +131,6 @@ object AuthApi {
     private fun saveSession(context: Context, token: String, userId: String, name: String) {
         context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).edit()
             .putString("access_token", token).putString("user_id", userId)
-            .putString("display_name", name).apply()
+            .putString("display_name", name).putString("account_role", "listener").apply()
     }
 }
