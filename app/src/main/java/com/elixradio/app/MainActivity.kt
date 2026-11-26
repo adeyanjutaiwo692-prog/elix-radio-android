@@ -173,11 +173,72 @@ class MainActivity : Activity() {
     }
 
     private fun showAccount() {
-        base("Account", "Your ELIX experience", "MY ACCOUNT", "Create an account to personalise your Christian media experience.")
-        tile(content, "Create account / Sign in", "Google and email authentication will be activated when the ELIX identity backend is configured.") { info("Account registration is not active in this preview build. It requires the ELIX authentication service and Google OAuth configuration.") }
-        tile(content, "Followed ministries", "Keep your favourite ministry channels together.") { info("Sign-in and ministry-following services are coming with the backend integration.") }
-        tile(content, "Saved library & downloads", "Return to saved teachings and offline content.") { info("Offline downloads will be enabled after secure media storage is connected.") }
-        tile(content, "Subscriptions", "Manage premium access and your subscription.") { info("Payments are not activated yet. ELIX will connect a verified payment provider before accepting subscriptions.") }
+        base("Account", "Your ELIX experience", "MY ACCOUNT", "Sign in or create your free ELIX listener account.")
+        if (AuthApi.isSignedIn(this)) {
+            text(content, "Signed in as " + AuthApi.currentName(this).ifBlank { "ELIX listener" }, 16, gold, true)
+            space(content, 12)
+            button(content, "SIGN OUT") {
+                AuthApi.signOut(this)
+                showAccount()
+            }
+            return
+        }
+        button(content, "CREATE ACCOUNT") { showAuthDialog(true) }
+        space(content, 10)
+        button(content, "SIGN IN") { showAuthDialog(false) }
+        space(content, 14)
+        notice(content, "Use your email address and a password. If email confirmation is enabled, confirm your address before signing in.")
+    }
+
+    private fun showAuthDialog(create: Boolean) {
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val nameInput = android.widget.EditText(this).apply {
+            hint = "Full name"
+            setTextColor(white)
+            setHintTextColor(muted)
+            setSingleLine(true)
+        }
+        if (create) fields.addView(nameInput)
+        val emailInput = android.widget.EditText(this).apply {
+            hint = "Email address"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            setTextColor(white)
+            setHintTextColor(muted)
+            setSingleLine(true)
+        }
+        fields.addView(emailInput)
+        val passwordInput = android.widget.EditText(this).apply {
+            hint = "Password (minimum 6 characters)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(white)
+            setHintTextColor(muted)
+            setSingleLine(true)
+        }
+        fields.addView(passwordInput)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(if (create) "Create ELIX account" else "Sign in to ELIX")
+            .setView(fields)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(if (create) "Create account" else "Sign in") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                val email = emailInput.text.toString().trim()
+                val password = passwordInput.text.toString()
+                if (email.isBlank() || password.length < 6 || (create && name.isBlank())) {
+                    info("Enter the required details. Password must contain at least 6 characters.")
+                } else {
+                    val callback: (AuthApi.Result) -> Unit = { result ->
+                        runOnUiThread {
+                            info(result.message)
+                            if (result.ok && AuthApi.isSignedIn(this)) showAccount()
+                        }
+                    }
+                    if (create) AuthApi.signUp(this, name, email, password, callback)
+                    else AuthApi.signIn(this, email, password, callback)
+                }
+            }.show()
     }
 
     private fun openLive() {
