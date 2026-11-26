@@ -145,14 +145,26 @@ object UploadApi {
                     setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
                     setRequestProperty("Authorization", "Bearer $token")
                     setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Prefer", "return=minimal")
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("Prefer", "return=representation")
                     outputStream.use { it.write(row.toString().toByteArray(Charsets.UTF_8)) }
                 }
                 val recordCode = record.responseCode
-                val recordBody = (if (recordCode in 200..299) record.inputStream else record.errorStream)
-                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val recordBody = try {
+                    (if (recordCode in 200..299) record.inputStream else record.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                } catch (e: Exception) {
+                    "Could not read server response: ${e.message ?: "unknown error"}"
+                }
+                val recordStatus = record.responseMessage ?: "Unknown response"
                 record.disconnect()
-                if (recordCode !in 200..299) throw IllegalStateException("File uploaded but catalogue publishing failed: $recordBody")
+                if (recordCode !in 200..299) {
+                    val detail = recordBody.ifBlank { "The server returned an empty error body." }
+                    throw IllegalStateException("File uploaded but catalogue publishing failed (HTTP $recordCode $recordStatus): $detail")
+                }
+                if (recordBody.isBlank()) {
+                    throw IllegalStateException("Catalogue request returned HTTP $recordCode but no confirmation was received. Please refresh Library before retrying.")
+                }
                 Result(true, "Uploaded successfully. It is now available in ELIX Radio.")
             } catch (e: Exception) {
                 Result(false, e.message ?: "Upload failed.")
