@@ -443,8 +443,12 @@ class MainActivity : Activity() {
     private fun chooseProfileImage(pageId: String?) {
         if (!AuthApi.isSignedIn(this)) { info("Sign in first."); return }
         imageTargetPageId = pageId
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }
-        startActivityForResult(intent, if (pageId.isNullOrBlank()) profileImageRequestCode else pageImageRequestCode)
+        val request = if (pageId.isNullOrBlank()) profileImageRequestCode else pageImageRequestCode
+        val gallery = Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
+        val camera = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+        val chooser = Intent.createChooser(gallery, "Choose profile picture")
+        if (camera.resolveActivity(packageManager) != null) chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(camera))
+        startActivityForResult(chooser, request)
     }
 
     private fun loadRemoteImage(url: String, target: ImageView) {
@@ -1052,16 +1056,21 @@ class MainActivity : Activity() {
         if(!AuthApi.isSignedIn(this)){showAccount();return}
         SupabaseApi.getWithError(this,"ministries?select=id,name&owner_id=eq.${AuthApi.currentUserId(this)}&order=name.asc"){ rows,e -> runOnUiThread {
             val labels=mutableListOf("Personal account"); val ids=mutableListOf<String?>(null); for(i in 0 until rows.length()){val p=rows.getJSONObject(i);labels.add(p.optString("name"));ids.add(p.optString("id"))}
-            android.app.AlertDialog.Builder(this).setTitle("Publish under which account?").setItems(labels.toTypedArray()){_,idx -> selectedPageId=ids[idx]; android.app.AlertDialog.Builder(this).setTitle("Choose media type").setItems(arrayOf("Audio","Video","Images","Book (PDF)")){_,which -> selectedUploadType=arrayOf("audio","video","image","pdf")[which]; val type=if(selectedUploadType=="audio")"audio/*" else if(selectedUploadType=="video")"video/*" else if(selectedUploadType=="pdf")"application/pdf" else "image/*"; val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);this.type=type};startActivityForResult(intent,uploadRequestCode)}.show()}.show()
+            android.app.AlertDialog.Builder(this).setTitle("Publish under which account?").setItems(labels.toTypedArray()){_,idx -> selectedPageId=ids[idx]; android.app.AlertDialog.Builder(this).setTitle("Choose media type").setItems(arrayOf("Audio","Video","Images","Book (PDF)")){_,which -> selectedUploadType=arrayOf("audio","video","image","pdf")[which]; val type=if(selectedUploadType=="audio")"audio/*" else if(selectedUploadType=="video")"video/*" else if(selectedUploadType=="pdf")"application/pdf" else "image/*"; val intent=Intent(Intent.ACTION_GET_CONTENT).apply{addCategory(Intent.CATEGORY_OPENABLE);this.type=type};startActivityForResult(intent,uploadRequestCode)}.show()}.show()
         } }
     }
     @Deprecated("Use platform activity result APIs")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if ((requestCode == profileImageRequestCode || requestCode == pageImageRequestCode) && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
+            var uri = data?.data
+            if (uri == null) {
+                val bitmap = data?.extras?.get("data") as? android.graphics.Bitmap ?: return
+                uri = try { Uri.parse(android.provider.MediaStore.Images.Media.insertImage(contentResolver, bitmap, "ELIX profile", null)) } catch (_: Exception) { null }
+            }
+            val selectedUri = uri ?: return
             val pageId = if (requestCode == pageImageRequestCode) imageTargetPageId else null
-            UploadApi.uploadProfileImage(this, uri, AuthApi.currentUserId(this)) { result ->
+            UploadApi.uploadProfileImage(this, selectedUri, AuthApi.currentUserId(this)) { result ->
                 runOnUiThread {
                     if (!result.first) { info("Picture upload failed: " + result.second); return@runOnUiThread }
                     val endpoint = if (pageId.isNullOrBlank()) "profiles?id=eq." + AuthApi.currentUserId(this) else "ministries?id=eq." + pageId
