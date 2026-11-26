@@ -42,7 +42,7 @@ object AuthApi {
         thread {
             val result = try {
                 val body = JSONObject().put("email", email).put("password", password)
-                    .put("data", JSONObject().put("full_name", name))
+                    .put("data", JSONObject().put("full_name", name).put("content_policy_accepted", true))
                 val response = request("/auth/v1/signup", "POST", body)
                 val token = response.optString("access_token")
                 if (token.isNotBlank()) {
@@ -84,7 +84,7 @@ object AuthApi {
         prefs.edit().clear().apply()
     }
 
-    fun currentName(context: Context): String =
+    fun accessToken(context: Context): String =\n        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("access_token", "").orEmpty()\n\n    fun currentUserId(context: Context): String =\n        context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("user_id", "").orEmpty()\n\n    fun currentName(context: Context): String =
         context.getSharedPreferences("elix_auth", Context.MODE_PRIVATE).getString("display_name", "").orEmpty()
 
     fun isSignedIn(context: Context): Boolean =
