@@ -37,6 +37,8 @@ class MainActivity : Activity() {
     private var mediaPlayer: MediaPlayer? = null
     private val homeFeedItems = ArrayList<JSONObject>()
     private var homeFeedIndex = 0
+    private var activeFeedMediaId = ""
+    private var feedItemStartedAt = 0L
     private var homeVideo: VideoView? = null
     private var homeImage: ImageView? = null
     private var homeAudioPanel: LinearLayout? = null
@@ -175,9 +177,20 @@ class MainActivity : Activity() {
             else if (current?.optString("media_type") == "audio") { if (mediaPlayer?.isPlaying == true) { mediaPlayer?.pause(); text = "▶  PLAY" } else { mediaPlayer?.start(); text = "Ⅱ  PAUSE" } }
         } }
         controls.addView(pause, LinearLayout.LayoutParams(0, dp(48), 1f))
-        val share = Button(this).apply { text = "↗  SHARE"; isAllCaps = false; setOnClickListener { shareCurrentFeedItem() } }
+        val like = Button(this).apply { text = "♡  LIKE"; isAllCaps = false; setOnClickListener {
+            val item = homeFeedItems.getOrNull(homeFeedIndex)
+            if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "like"); text = "♥  LIKED" }
+        } }
+        controls.addView(like, LinearLayout.LayoutParams(0, dp(48), 1f))
+        val share = Button(this).apply { text = "↗"; isAllCaps = false; setOnClickListener { shareCurrentFeedItem() } }
         controls.addView(share, LinearLayout.LayoutParams(0, dp(48), 1f))
         overlay.addView(controls)
+        val feedback = Button(this).apply { text = "⋯  NOT INTERESTED"; isAllCaps = false; setOnClickListener {
+            val item = homeFeedItems.getOrNull(homeFeedIndex)
+            if (item != null) FeedEngagementApi.record(this@MainActivity, item.optString("id"), "not_interested")
+            moveFeed(1)
+        } }
+        overlay.addView(feedback)
         frame.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         val touch = View.OnTouchListener { _, event ->
             when (event.action) {
@@ -200,7 +213,7 @@ class MainActivity : Activity() {
         content.addView(hint, fullWidth())
         val feedLoading = TextView(this).apply { text = "Loading approved ELIX content…"; textSize = 12f; setTextColor(muted); gravity = Gravity.CENTER }
         content.addView(feedLoading, fullWidth())
-        SupabaseApi.getWithError(this, "media_items?select=title,kind,media_type,file_path&status=eq.approved&order=created_at.desc&limit=100") { rows, error ->
+        SupabaseApi.getWithError(this, "media_items?select=id,title,kind,media_type,file_path,duration_seconds&status=eq.approved&order=created_at.desc&limit=200") { rows, error ->
             runOnUiThread {
                 if (isFinishing || homeFeedFrame !== frame) return@runOnUiThread
                 content.removeView(feedLoading)
@@ -209,7 +222,17 @@ class MainActivity : Activity() {
                 for (i in 0 until rows.length()) homeFeedItems.add(rows.getJSONObject(i))
                 if (homeFeedItems.isEmpty()) { homeFeedTitle?.text = "Your ELIX feed is waiting"; homeFeedCategory?.text = "NO PUBLISHED CONTENT YET"; homeFeedPosition?.text = "Approved sermons, worship, videos and audio will appear here."; return@runOnUiThread }
                 homeFeedIndex = 0
-                displayHomeFeedItem()
+                FeedEngagementApi.loadSignals(this@MainActivity) { signals ->
+                    runOnUiThread {
+                        if (isFinishing || homeFeedFrame !== frame) return@runOnUiThread
+                        homeFeedItems.sortByDescending { item ->
+                            val id = item.optString("id")
+                            val kind = item.optString("kind", "other")
+                            (signals.itemScores[id] ?: 0.0) + (signals.categoryScores[kind] ?: 0.0) * 0.35
+                        }
+                        displayHomeFeedItem()
+                    }
+                }
             }
         }
     }
@@ -224,6 +247,12 @@ class MainActivity : Activity() {
 
     private fun displayHomeFeedItem() {
         val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
+        if (activeFeedMediaId.isNotBlank()) {
+            val watched = ((System.currentTimeMillis() - feedItemStartedAt) / 1000L).toInt().coerceAtLeast(0)
+            FeedEngagementApi.record(this, activeFeedMediaId, if (watched <= 3) "skip" else "watch", watched)
+        }
+        activeFeedMediaId = item.optString("id")
+        feedItemStartedAt = System.currentTimeMillis()
         stopAudio()
         try { homeVideo?.stopPlayback() } catch (_: Exception) { }
         homeVideo?.visibility = View.GONE
@@ -263,6 +292,7 @@ class MainActivity : Activity() {
 
     private fun shareCurrentFeedItem() {
         val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
+        FeedEngagementApi.record(this, item.optString("id"), "share")
         val path = item.optString("file_path")
         val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, item.optString("title") + "\n" + url) }
