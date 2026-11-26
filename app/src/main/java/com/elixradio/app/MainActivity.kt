@@ -183,7 +183,7 @@ class MainActivity : Activity() {
     private fun showDiscover() {
         content.removeAllViews()
         content.setPadding(0, 0, 0, 0)
-        setNav("Home")
+        setNav("Discover")
         val height = (resources.displayMetrics.heightPixels - dp(170)).coerceAtLeast(dp(420))
         val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         homeFeedFrame = frame
