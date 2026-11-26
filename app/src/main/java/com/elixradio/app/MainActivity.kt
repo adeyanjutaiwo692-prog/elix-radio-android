@@ -1198,7 +1198,7 @@ class MainActivity : Activity() {
             val url = if (rows.length()>0) rows.getJSONObject(0).optString("avatar_url") else ""
             if (url.isNotBlank()) loadRemoteImage(url, avatarImage)
         }
-        val stats = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; weightSum = 3f }
+        val stats = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; weightSum = 4f }
         fun stat(label: String): TextView {
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
             val value = TextView(this).apply { text = "…"; textSize = 19f; setTextColor(Color.BLACK); setTypeface(null, Typeface.BOLD) }
@@ -1206,7 +1206,7 @@ class MainActivity : Activity() {
             col.addView(value); col.addView(caption); stats.addView(col, LinearLayout.LayoutParams(0,-2,1f))
             return value
         }
-        val postCount = stat("posts"); val followerCount = stat("followers"); val followingCount = stat("following")
+        val postCount = stat("posts"); val followerCount = stat("followers"); val followingCount = stat("following"); val likesCount = stat("likes")
         profileRow.addView(stats, LinearLayout.LayoutParams(0,-2,1f))
         content.addView(profileRow, fullWidth())
         text(content, displayName, 14, Color.BLACK, true)
@@ -1226,10 +1226,13 @@ class MainActivity : Activity() {
         SupabaseApi.getWithError(this,"media_items?select=id&uploaded_by=eq.$userId&status=eq.approved&limit=1000") { posts, _ ->
             SupabaseApi.getWithError(this,"creator_follower_counts?select=follower_count&creator_id=eq.$userId&limit=1") { followers, _ ->
                 SupabaseApi.getWithError(this,"creator_follows?select=creator_id&follower_id=eq.$userId") { following, _ ->
-                    runOnUiThread {
-                        postCount.text=posts.length().toString()
-                        followerCount.text=if(followers.length()>0) followers.getJSONObject(0).optLong("follower_count").toString() else "0"
-                        followingCount.text=following.length().toString()
+                    SupabaseApi.getWithError(this,"media_engagement_events?select=id,media_items!inner(uploaded_by)&event_type=eq.like&media_items.uploaded_by=eq.$userId&limit=1000") { likes, _ ->
+                        runOnUiThread {
+                            postCount.text=posts.length().toString()
+                            followerCount.text=if(followers.length()>0) followers.getJSONObject(0).optLong("follower_count").toString() else "0"
+                            followingCount.text=following.length().toString()
+                            likesCount.text=likes.length().toString()
+                        }
                     }
                 }
             }
