@@ -296,7 +296,7 @@ class MainActivity : Activity() {
                 dialog.getButton(-1).isEnabled = false
                 SupabaseApi.postWithError(this, "ministries", data) { error ->
                     runOnUiThread {
-                        if (error == null) { info("Your page account has been created."); showMyPages() }
+                        if (error == null) { dialog.dismiss(); info("Your page account has been created."); showMyPages() }
                         else { info("Page creation failed: $error"); dialog.getButton(-1).isEnabled = true }
                     }
                 }
