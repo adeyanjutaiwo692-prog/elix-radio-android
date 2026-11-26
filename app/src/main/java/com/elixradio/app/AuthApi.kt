@@ -67,9 +67,7 @@ object AuthApi {
                 val token = response.optString("access_token")
                 val userId = user.optString("id")
                 saveSession(context, token, userId, user.optJSONObject("user_metadata")?.optString("full_name").orEmpty())
-                val profile = request("/rest/v1/profiles?id=eq.$userId&select=display_name,role", "GET", null, token)
-                val row = profile.optJSONArray("data")?.optJSONObject(0)
-                Result(true, "Signed in successfully.", row?.optString("display_name").orEmpty(), row?.optString("role").orEmpty())
+                Result(true, "Signed in successfully.", currentName(context), "listener")
             } catch (e: Exception) {
                 Result(false, e.message ?: "Could not sign in.")
             }
