@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -28,6 +29,7 @@ class MainActivity : Activity() {
     private val uploadRequestCode = 4107
     private var selectedUploadType = "audio"
     private var libraryType = "all"
+    private var mediaPlayer: MediaPlayer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,7 +62,7 @@ class MainActivity : Activity() {
 
     private fun setNav(active: String) {
         nav.removeAllViews()
-        listOf("Home", "Live", "Library", "Ministries", "Upcoming", "Account").forEach { label ->
+        listOf("Home", "Radio", "Live Radio", "Live Video", "Library", "Upcoming", "Account").forEach { label ->
             val b = TextView(this).apply {
                 text = label
                 textSize = 10f
@@ -71,7 +73,9 @@ class MainActivity : Activity() {
                 setOnClickListener {
                     when (label) {
                         "Home" -> showHome()
-                        "Live" -> showLive()
+                        "Radio" -> showRadio()
+                        "Live Radio" -> showLiveRadio()
+                        "Live Video" -> showLive()
                         "Library" -> showLibrary()
                         "Ministries" -> showMinistries()
                         "Upcoming" -> showUpcoming()
@@ -141,57 +145,118 @@ class MainActivity : Activity() {
     }
 
     private fun showLive() {
-        base("Live", "Broadcast network", "LIVE NOW", "Authorised ministry broadcasts in one place.")
+        base("Live Video", "Video broadcast network", "LIVE VIDEO", "Watch authorised live video broadcasts.")
         val c = card(content)
         text(c, "GLORY REALM GLOBAL", 12, gold, true)
         space(c, 8)
         text(c, "Minister PAUL AYO", 22, white, true)
         text(c, "Featured live programme", 14, muted, false)
         space(c, 14)
-        button(c, "▶  OPEN LIVE BROADCAST") { openLive() }
+        button(c, "▶  WATCH LIVE VIDEO") { openLive() }
+        space(content, 12)
+        tile(content, "Live Radio", "Listen to a separate live audio broadcast.") { showLiveRadio() }
         space(content, 18)
         tile(content, "More ministry channels", "Participating ministries will appear here when their authorised feeds are connected and verified.") { showMinistries() }
         notice(content, "Live feed discovery requires the ELIX streaming backend and participating ministries' authorised HLS/RTMP/SRT integrations. This screen does not pretend that recorded videos are live.")
     }
 
     private fun showLibrary() {
-        base("Library", "On-demand content", "ELIX MEDIA LIBRARY", "Sermons, worship, videos, podcasts and Christian resources.")
-        if (AuthApi.isSignedIn(this)) {
-            button(content, "＋  UPLOAD A FILE") { chooseUploadFile() }
-            space(content, 12)
-        } else {
-            notice(content, "Sign in or create an account to upload audio, video, PDF or image files.")
+        base("Library", "On-demand content", "ELIX MEDIA LIBRARY", "Audio, video and images are separated and grouped by category.")
+        if (AuthApi.isSignedIn(this)) button(content, "＋  UPLOAD MEDIA") { chooseUploadFile() }
+        else notice(content, "Sign in to upload audio, video or image files.")
+        val filters = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("all" to "ALL", "audio" to "AUDIO", "video" to "VIDEO", "image" to "IMAGES").forEach { pair ->
+            val b = Button(this).apply { text = pair.second; textSize = 10f; isAllCaps = false; setOnClickListener { libraryType = pair.first; showLibrary() } }
+            filters.addView(b, LinearLayout.LayoutParams(0, dp(44), 1f))
         }
-        text(content, "RECENT UPLOADS", 17, white, true)
-        space(content, 8)
+        content.addView(filters, fullWidth())
+        space(content, 12)
         val list = card(content)
-        text(list, "Loading published media…", 14, muted, false)
-        SupabaseApi.get("media_items?select=id,title,media_type,file_path,created_at&status=eq.approved&order=created_at.desc&limit=50") { rows ->
+        text(list, "Loading catalogue…", 13, muted, false)
+        val filter = if (libraryType == "all") "" else "&media_type=eq.$libraryType"
+        SupabaseApi.getWithError(this, "media_items?select=title,kind,media_type,file_path&status=eq.approved$filter&order=created_at.desc&limit=100") { rows, error ->
             runOnUiThread {
                 list.removeAllViews()
-                if (rows.length() == 0) text(list, "No files have been uploaded yet.", 14, muted, false)
-                for (i in 0 until rows.length()) {
-                    val item = rows.getJSONObject(i)
-                    val title = item.optString("title", "ELIX media")
-                    val kind = item.optString("media_type", "media").uppercase()
-                    val path = item.optString("file_path")
-                    text(list, title, 16, gold, true)
-                    text(list, kind + " · Tap to open", 12, muted, false)
-                    val open = Button(this).apply {
-                        text = "OPEN FILE"
-                        isAllCaps = false
-                        setOnClickListener {
-                            val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
-                            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                            catch (_: Exception) { info("Could not open this file.") }
+                if (error != null) text(list, "Catalogue error: $error", 12, signalRed, false)
+                else if (rows.length() == 0) text(list, "No published media in this section yet.", 14, muted, false)
+                else {
+                    var last = ""
+                    for (i in 0 until rows.length()) {
+                        val item = rows.getJSONObject(i)
+                        val kind = item.optString("kind", "other")
+                        val category = kind.replace('_', ' ').uppercase()
+                        if (category != last) { text(list, category, 12, signalRed, true); last = category }
+                        val mediaType = item.optString("media_type", "media")
+                        val path = item.optString("file_path")
+                        text(list, item.optString("title", "ELIX media"), 16, gold, true)
+                        text(list, mediaType.uppercase(), 11, muted, false)
+                        button(list, if (mediaType == "audio") "▶  PLAY AUDIO" else "OPEN FILE") {
+                            if (mediaType == "audio") playAudio(item.optString("title", "ELIX Radio"), path) else openMedia(path)
                         }
+                        space(list, 12)
                     }
-                    list.addView(open, fullWidth())
-                    space(list, 10)
                 }
             }
         }
-        notice(content, "By uploading, you confirm that you own the content or have permission to share it. Non-Christian or inappropriate content may be removed by ELIX administrators.")
+        notice(content, "Every upload is listed under its selected media type and content category.")
+    }
+
+    private fun showRadio() {
+        base("Radio", "ELIX audio station", "ELIX RADIO", "Listen to recorded audio programmes and messages.")
+        val player = card(content)
+        text(player, "AUDIO PLAYER", 12, signalRed, true)
+        text(player, "Choose a programme below to listen.", 14, muted, false)
+        button(player, "■  STOP") { stopAudio() }
+        space(content, 12)
+        text(content, "RECENT AUDIO", 17, white, true)
+        val list = card(content)
+        SupabaseApi.getWithError(this, "media_items?select=title,kind,file_path&status=eq.approved&media_type=eq.audio&order=created_at.desc&limit=100") { rows, error ->
+            runOnUiThread {
+                list.removeAllViews()
+                if (error != null) text(list, "Could not load audio: $error", 12, signalRed, false)
+                else if (rows.length() == 0) text(list, "No audio uploaded yet. Use Library → Upload Media.", 14, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val item = rows.getJSONObject(i)
+                    text(list, item.optString("title", "ELIX audio"), 15, gold, true)
+                    text(list, item.optString("kind", "other").replace('_', ' ').uppercase(), 11, muted, false)
+                    button(list, "▶  PLAY") { playAudio(item.optString("title", "ELIX Radio"), item.optString("file_path")) }
+                }
+            }
+        }
+    }
+
+    private fun showLiveRadio() {
+        base("Live Radio", "Live audio broadcast", "LIVE RADIO", "A real-time audio session, separate from recorded audio and live video.")
+        val panel = card(content)
+        text(panel, "●  LIVE AUDIO", 13, signalRed, true)
+        text(panel, "No live radio session is configured yet. An authorised audio stream URL must be added by the ELIX administrator before listeners can tune in.", 14, muted, false)
+        notice(content, "This is a separate live audio service. Recorded audio is under ELIX Radio; live video is under Live Video.")
+    }
+
+    private fun playAudio(title: String, path: String) {
+        val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
+        if (path.isBlank()) { info("This audio has no file path."); return }
+        stopAudio()
+        val player = MediaPlayer()
+        mediaPlayer = player
+        try {
+            player.setDataSource(url)
+            player.setOnPreparedListener { it.start(); info("Now playing: $title") }
+            player.setOnErrorListener { _, _, _ -> info("Audio playback failed."); stopAudio(); true }
+            player.prepareAsync()
+        } catch (e: Exception) { info("Audio playback failed: " + (e.message ?: "unknown error")); stopAudio() }
+    }
+
+    private fun stopAudio() {
+        try { mediaPlayer?.stop() } catch (_: Exception) { }
+        try { mediaPlayer?.release() } catch (_: Exception) { }
+        mediaPlayer = null
+    }
+
+    private fun openMedia(path: String) {
+        val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
+        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        catch (_: Exception) { info("Could not open this file.") }
     }
 
     private fun chooseUploadFile() {
@@ -463,6 +528,8 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Could not open the live programme.", Toast.LENGTH_LONG).show()
         }
     }
+
+    override fun onDestroy() { stopAudio(); super.onDestroy() }
 
     private fun info(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
