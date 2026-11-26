@@ -1,7 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:icon="@drawable/elix_logo"
+        android:roundIcon="@drawable/elix_logo"
         android:label="ELIX Radio"
         android:usesCleartextTraffic="false"
         android:hardwareAccelerated="true">

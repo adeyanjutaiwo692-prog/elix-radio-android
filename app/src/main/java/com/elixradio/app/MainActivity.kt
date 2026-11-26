@@ -4,20 +4,23 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
 class MainActivity : Activity() {
-    private val bg = Color.rgb(10, 12, 24)
-    private val panel = Color.rgb(27, 32, 51)
-    private val gold = Color.rgb(226, 187, 105)
+    private val bg = Color.rgb(4, 7, 17)
+    private val panel = Color.rgb(10, 19, 38)
+    private val gold = Color.rgb(35, 132, 255)
+    private val signalRed = Color.rgb(238, 32, 48)
     private val white = Color.rgb(250, 248, 255)
     private val muted = Color.rgb(190, 193, 208)
     private lateinit var content: LinearLayout
@@ -26,26 +29,26 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(25, 18, 43)
+        window.statusBarColor = Color.rgb(3, 7, 17)
         window.navigationBarColor = bg
         window.decorView.setBackgroundColor(bg)
 
         val shell = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(bg)
+            setBackgroundResource(R.drawable.elix_background)
         }
         val scroll = ScrollView(this).apply { isFillViewport = true; setBackgroundColor(bg) }
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(24), dp(20), dp(28))
-            setBackgroundColor(bg)
+            setBackgroundResource(R.drawable.elix_background)
         }
         scroll.addView(content)
         shell.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(5), dp(8), dp(5), dp(8))
-            setBackgroundColor(Color.rgb(19, 23, 39))
+            setBackgroundColor(Color.rgb(3, 8, 20))
             gravity = Gravity.CENTER
         }
         shell.addView(nav, LinearLayout.LayoutParams(-1, dp(62)))
@@ -61,7 +64,7 @@ class MainActivity : Activity() {
                 textSize = 10f
                 gravity = Gravity.CENTER
                 setTypeface(null, if (label == active) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (label == active) gold else muted)
+                setTextColor(if (label == active) Color.rgb(48, 145, 255) else muted)
                 setPadding(dp(3), dp(8), dp(3), dp(8))
                 setOnClickListener {
                     when (label) {
@@ -81,11 +84,26 @@ class MainActivity : Activity() {
     private fun base(active: String, eyebrow: String, title: String, subtitle: String) {
         content.removeAllViews()
         setNav(active)
-        text(content, eyebrow.uppercase(), 11, gold, true)
-        space(content, 9)
-        text(content, title, 32, white, true)
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.elix_logo)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        brand.addView(logo, LinearLayout.LayoutParams(dp(58), dp(58)))
+        val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        text(brandText, "ELIX RADIO", 19, white, true)
+        text(brandText, "CHRISTIAN MEDIA NETWORK", 9, Color.rgb(50, 145, 255), true)
+        brand.addView(brandText, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(brand, fullWidth())
+        space(content, 12)
+        text(content, eyebrow.uppercase(), 11, signalRed, true)
+        space(content, 7)
+        text(content, title, 30, white, true)
         text(content, subtitle, 15, muted, false)
-        space(content, 22)
+        space(content, 20)
     }
 
     private fun showHome() {
@@ -350,7 +368,11 @@ class MainActivity : Activity() {
         val v = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(17), dp(17), dp(17), dp(17))
-            setBackgroundColor(panel)
+            background = GradientDrawable().apply {
+                setColor(panel)
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.rgb(18, 65, 126))
+            }
         }
         val p = fullWidth(); p.bottomMargin = dp(10); parent.addView(v,p)
         return v
@@ -370,7 +392,11 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(muted)
             setPadding(dp(13), dp(13), dp(13), dp(13))
-            setBackgroundColor(Color.rgb(23, 29, 46))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(8, 22, 43))
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.rgb(22, 86, 160))
+            }
         }
         val p=fullWidth(); p.topMargin=dp(10); parent.addView(v,p)
     }
@@ -381,8 +407,11 @@ class MainActivity : Activity() {
             textSize = 14f
             isAllCaps = false
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(25,20,30))
-            setBackgroundColor(gold)
+            setTextColor(white)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(signalRed, Color.rgb(170, 12, 35))).apply {
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.rgb(255, 70, 83))
+            }
             setOnClickListener { action() }
         }
         parent.addView(b, LinearLayout.LayoutParams(-1, dp(52)))
