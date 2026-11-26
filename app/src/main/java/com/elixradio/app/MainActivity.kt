@@ -287,9 +287,10 @@ class MainActivity : Activity() {
                 button(content, "⚙  OPEN DEVELOPER DASHBOARD") { showDeveloperDashboard() }
                 space(content, 10)
             }
+            val roleBeforeRefresh = AuthApi.currentRole(this)
             AuthApi.fetchRole(this) { role ->
                 runOnUiThread {
-                    if (role == "super_admin" && isFinishing.not()) showAccount()
+                    if (role == "super_admin" && roleBeforeRefresh != role && !isFinishing) showAccount()
                 }
             }
             button(content, "SIGN OUT") {
