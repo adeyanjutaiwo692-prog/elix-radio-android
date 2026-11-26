@@ -76,7 +76,10 @@ class MainActivity : Activity() {
         }
         shell.addView(nav, LinearLayout.LayoutParams(-1, dp(62)))
         setContentView(shell)
-        if (AuthApi.isSignedIn(this)) showHome() else showWelcome()
+        val invitedCreator = if (intent?.data?.scheme == "elix" && intent.data?.host == "invite") intent.data?.lastPathSegment.orEmpty() else ""
+        if (AuthApi.isSignedIn(this)) {
+            if (invitedCreator.isNotBlank()) showCreatorProfile(invitedCreator, "ELIX member") else showHome()
+        } else showWelcome()
     }
 
     private fun showWelcome() {
