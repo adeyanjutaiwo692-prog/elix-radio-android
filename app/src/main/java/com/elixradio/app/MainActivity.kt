@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private val homeFeedItems = ArrayList<JSONObject>()
     private var homeFeedIndex = 0
     private var activeFeedMediaId = ""
+    private var pendingInviteCreatorId = ""
     private var feedItemStartedAt = 0L
     private var homeVideo: VideoView? = null
     private var homeImage: ImageView? = null
@@ -76,9 +77,13 @@ class MainActivity : Activity() {
         }
         shell.addView(nav, LinearLayout.LayoutParams(-1, dp(62)))
         setContentView(shell)
-        val invitedCreator = if (intent?.data?.scheme == "elix" && intent.data?.host == "invite") intent.data?.lastPathSegment.orEmpty() else ""
+        pendingInviteCreatorId = if (intent?.data?.scheme == "elix" && intent.data?.host == "invite") intent.data?.lastPathSegment.orEmpty() else ""
         if (AuthApi.isSignedIn(this)) {
-            if (invitedCreator.isNotBlank()) showCreatorProfile(invitedCreator, "ELIX member") else showHome()
+            if (pendingInviteCreatorId.isNotBlank()) {
+                val invited = pendingInviteCreatorId
+                pendingInviteCreatorId = ""
+                showCreatorProfile(invited, "ELIX member")
+            } else showHome()
         } else showWelcome()
     }
 
@@ -100,7 +105,14 @@ class MainActivity : Activity() {
         val email = android.widget.EditText(this).apply { hint = "Email address"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS; setTextColor(white); setHintTextColor(muted); setSingleLine(true); setPadding(dp(16), dp(14), dp(16), dp(14)); background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dp(10).toFloat(); setStroke(dp(1), Color.rgb(220,220,220)) } }
         val password = android.widget.EditText(this).apply { hint = "Password"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD; setTextColor(white); setHintTextColor(muted); setSingleLine(true); setPadding(dp(16), dp(14), dp(16), dp(14)); background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dp(10).toFloat(); setStroke(dp(1), Color.rgb(220,220,220)) } }
         content.addView(email, fullWidth()); space(content, 10); content.addView(password, fullWidth()); space(content, 16)
-        button(content, "Log in") { val e=email.text.toString().trim(); val p=password.text.toString(); if(e.isBlank()||p.length<6) info("Enter your email and password.") else AuthApi.signIn(this,e,p) { result -> runOnUiThread { info(result.message); if(result.ok && AuthApi.isSignedIn(this)) { nav.visibility=View.VISIBLE; showHome() } } } }
+        button(content, "Log in") { val e=email.text.toString().trim(); val p=password.text.toString(); if(e.isBlank()||p.length<6) info("Enter your email and password.") else AuthApi.signIn(this,e,p) { result -> runOnUiThread { info(result.message); if(result.ok && AuthApi.isSignedIn(this)) {
+                            nav.visibility=View.VISIBLE
+                            if(pendingInviteCreatorId.isNotBlank()) {
+                                val invited=pendingInviteCreatorId
+                                pendingInviteCreatorId=""
+                                showCreatorProfile(invited,"ELIX member")
+                            } else showHome()
+                        } } } }
         space(content, 12)
         val create = TextView(this).apply { text = "Create new account"; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.rgb(0,149,246)); setPadding(0, dp(14), 0, dp(14)); setOnClickListener { showAuthDialog(true) } }
         content.addView(create, fullWidth())
@@ -1495,7 +1507,14 @@ class MainActivity : Activity() {
                     val callback: (AuthApi.Result) -> Unit = { result ->
                         runOnUiThread {
                             info(result.message)
-                            if (result.ok && AuthApi.isSignedIn(this)) { nav.visibility = View.VISIBLE; showHome() }
+                            if (result.ok && AuthApi.isSignedIn(this)) {
+                                nav.visibility = View.VISIBLE
+                                if (pendingInviteCreatorId.isNotBlank()) {
+                                    val invited = pendingInviteCreatorId
+                                    pendingInviteCreatorId = ""
+                                    showCreatorProfile(invited, "ELIX member")
+                                } else showHome()
+                            }
                         }
                     }
                     if (create) AuthApi.signUp(this, name, email, password, callback)
