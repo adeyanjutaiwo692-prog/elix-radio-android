@@ -292,7 +292,7 @@ class MainActivity : Activity() {
                 if (n.isBlank()) { name.error = "Enter a page name"; return@setOnClickListener }
                 val slug = n.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-') + "-" + System.currentTimeMillis().toString().takeLast(6)
                 val kind = when (type.selectedItemPosition) { 1 -> "church"; 2 -> "organisation"; 3 -> "public_figure"; 4 -> "author"; 5 -> "artist"; else -> "ministry" }
-                val data = JSONObject().put("name", n).put("slug", slug).put("description", desc.text.toString().trim()).put("city", city.text.toString().trim()).put("page_type", kind).put("owner_id", AuthApi.currentUserId(this)).put("approved", true)
+                val data = JSONObject().put("name", n).put("slug", slug).put("description", desc.text.toString().trim()).put("city", city.text.toString().trim()).put("page_type", kind).put("owner_id", AuthApi.currentUserId(this)).put("approved", false)
                 dialog.getButton(-1).isEnabled = false
                 SupabaseApi.postWithError(this, "ministries", data) { error ->
                     runOnUiThread {
