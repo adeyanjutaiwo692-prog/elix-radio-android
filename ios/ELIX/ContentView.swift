@@ -103,8 +103,101 @@ struct RadioScreen: View {
 }
 struct AccountScreen: View {
  @EnvironmentObject var store:ELIXStore
- var body: some View { NavigationStack { VStack(spacing:18){Image(systemName:"person.crop.circle.fill").font(.system(size:70)).foregroundStyle(gold);Text("Your ELIX Account").font(.title2.bold());Text(store.email).foregroundStyle(.secondary);Button("Sign Out"){store.signOut()}.buttonStyle(.borderedProminent).tint(gold).foregroundStyle(.black)}.frame(maxWidth:.infinity,maxHeight:.infinity).background(Color.black).navigationTitle("Account") } }
+ var body: some View { NavigationStack { VStack(spacing:18){Image(systemName:"person.crop.circle.fill").font(.system(size:70)).foregroundStyle(gold);Text("Your ELIX Account").font(.title2.bold());Text(store.email).foregroundStyle(.secondary);NavigationLink("Discover Creators"){ CreatorDirectoryView().environmentObject(store) }.foregroundStyle(gold).padding(.vertical,8)
+ Button("Sign Out"){store.signOut()}.buttonStyle(.borderedProminent).tint(gold).foregroundStyle(.black)}.frame(maxWidth:.infinity,maxHeight:.infinity).background(Color.black).navigationTitle("Account") } }
 }
 private var gold:Color { Color(red:0.84,green:0.69,blue:0.40) }
 private func empty(_ message:String)->some View { VStack(spacing:12){Image(systemName:"sparkles").font(.largeTitle).foregroundStyle(gold);Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center)}.frame(maxWidth:.infinity,maxHeight:.infinity).padding() }
 private var brandHeader:some View { VStack(alignment:.leading,spacing:6){Text("ELIX").font(.system(size:32,weight:.black)).tracking(5).foregroundStyle(gold);Text("CHRISTIAN MEDIA NETWORK").font(.caption2).tracking(2);Text("Faith. Truth. Inspiration.").font(.subheadline).foregroundStyle(.secondary)}.padding(.vertical,18) }
+
+
+struct CreatorProfile: Codable, Identifiable {
+ let id: UUID
+ var display_name: String?
+}
+struct CreatorMedia: Codable, Identifiable {
+ let id: UUID
+ let title: String
+ var description: String?
+ var media_type: String
+ var file_path: String?
+}
+struct CreatorDirectoryView: View {
+ @EnvironmentObject var store: ELIXStore
+ @State private var creators:[CreatorProfile] = []
+ @State private var selected:CreatorProfile?
+ @State private var media:[CreatorMedia] = []
+ @State private var following = false
+ @State private var followers = 0
+ @State private var error = ""
+ @State private var busy = false
+ private var myId:String? {
+  guard let token=store.token else{return nil}
+  let parts=token.split(separator:".")
+  guard parts.count>1, let data=Data(base64Encoded:String(parts[1]).padding(toLength:((String(parts[1]).count+3)/4)*4,withPad:"=",startingAt:0)), let obj=try? JSONSerialization.jsonObject(with:data) as? [String:Any] else{return nil}
+  return obj["sub"] as? String
+ }
+ var body:some View {
+  List {
+   if let creator=selected {
+    Section {
+     HStack { Text(creator.display_name ?? "ELIX Creator").font(.title3.bold()); Spacer(); Text("\(followers) followers").foregroundStyle(gold) }
+     if creator.id.uuidString.lowercased() != myId?.lowercased() {
+      Button(following ? "Following · Unfollow" : "＋ Follow") { Task { await toggleFollow(creator) } }.disabled(busy)
+     }
+    }
+    Section("Published content") {
+     if media.isEmpty { Text("No published content yet.").foregroundStyle(.secondary) }
+     ForEach(media) { item in VStack(alignment:.leading,spacing:5) { Text(item.title).font(.headline); Text(item.media_type.uppercased()).font(.caption).foregroundStyle(.secondary) } }
+    }
+    Button("Back to creators") { selected=nil; media=[] }
+   } else {
+    Section("ELIX creator community") {
+     if creators.isEmpty { Text(error.isEmpty ? "Loading creators…" : error).foregroundStyle(.secondary) }
+     ForEach(creators.filter { $0.id.uuidString.lowercased() != myId?.lowercased() }) { creator in
+      Button { Task { await openCreator(creator) } } label: {
+       HStack { Image(systemName:"person.crop.circle.fill").font(.title2).foregroundStyle(gold); Text(creator.display_name ?? "ELIX Creator").foregroundStyle(.primary); Spacer(); Image(systemName:"chevron.right").foregroundStyle(.secondary) }
+      }
+     }
+    }
+   }
+  }
+  .navigationTitle(selected == nil ? "Creators" : "Creator profile")
+  .task { await loadCreators() }
+ }
+ private func loadCreators() async {
+  do {
+   let data=try await store.request("/rest/v1/profiles?select=id,display_name&order=created_at.desc&limit=200")
+   creators=try JSONDecoder().decode([CreatorProfile].self,from:data)
+  } catch { self.error=error.localizedDescription }
+ }
+ private func openCreator(_ creator:CreatorProfile) async {
+  selected=creator
+  do {
+   let id=creator.id.uuidString.lowercased()
+   let data=try await store.request("/rest/v1/media_items?select=id,title,description,media_type,file_path&uploaded_by=eq.\(id)&status=eq.approved&order=created_at.desc&limit=100")
+   media=try JSONDecoder().decode([CreatorMedia].self,from:data)
+   let counts=try await store.request("/rest/v1/creator_follower_counts?select=follower_count&creator_id=eq.\(id)")
+   if let row=(try JSONSerialization.jsonObject(with:counts) as? [[String:Any]])?.first { followers=(row["follower_count"] as? Int) ?? 0 }
+   if let me=myId, me.lowercased() != id {
+    let mine=try await store.request("/rest/v1/creator_follows?select=creator_id&follower_id=eq.\(me)&creator_id=eq.\(id)")
+    following = ((try JSONSerialization.jsonObject(with:mine) as? [[String:Any]])?.isEmpty == false)
+   }
+  } catch { self.error=error.localizedDescription }
+ }
+ private func toggleFollow(_ creator:CreatorProfile) async {
+  guard let me=myId else { error="Please sign in again to follow creators."; return }
+  busy=true; defer{busy=false}
+  do {
+   let id=creator.id.uuidString.lowercased()
+   let path="/rest/v1/creator_follows?follower_id=eq.\(me)&creator_id=eq.\(id)"
+   if following { _ = try await store.request(path,method:"DELETE") }
+   else {
+    let body=try JSONSerialization.data(withJSONObject:["follower_id":me,"creator_id":id])
+    _ = try await store.request("/rest/v1/creator_follows",method:"POST",body:body)
+   }
+   following.toggle()
+   followers += following ? 1 : -1
+  } catch { self.error=error.localizedDescription }
+ }
+}
