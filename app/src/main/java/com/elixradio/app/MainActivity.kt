@@ -23,12 +23,12 @@ import org.json.JSONObject
 import java.net.URL
 
 class MainActivity : Activity() {
-    private val bg = Color.rgb(4, 7, 17)
-    private val panel = Color.rgb(10, 19, 38)
-    private val gold = Color.rgb(35, 132, 255)
-    private val signalRed = Color.rgb(238, 32, 48)
-    private val white = Color.rgb(250, 248, 255)
-    private val muted = Color.rgb(190, 193, 208)
+    private val bg = Color.rgb(250, 250, 250)
+    private val panel = Color.rgb(255, 255, 255)
+    private val gold = Color.rgb(0, 149, 246)
+    private val signalRed = Color.rgb(0, 149, 246)
+    private val white = Color.rgb(20, 20, 20)
+    private val muted = Color.rgb(110, 110, 110)
     private lateinit var content: LinearLayout
     private lateinit var nav: LinearLayout
     private val uploadRequestCode = 4107
@@ -50,8 +50,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(3, 7, 17)
-        window.navigationBarColor = bg
+        window.statusBarColor = Color.rgb(250, 250, 250)
+        window.navigationBarColor = Color.WHITE
         window.decorView.setBackgroundColor(bg)
 
         val shell = LinearLayout(this).apply {
@@ -69,12 +69,38 @@ class MainActivity : Activity() {
         nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(5), dp(8), dp(5), dp(8))
-            setBackgroundColor(Color.rgb(3, 8, 20))
+            setBackgroundColor(Color.WHITE)
             gravity = Gravity.CENTER
         }
         shell.addView(nav, LinearLayout.LayoutParams(-1, dp(62)))
         setContentView(shell)
-        showHome()
+        if (AuthApi.isSignedIn(this)) showHome() else showWelcome()
+    }
+
+    private fun showWelcome() {
+        try { homeVideo?.stopPlayback() } catch (_: Exception) { }; stopAudio()
+        nav.visibility = View.GONE
+        content.removeAllViews()
+        content.setPadding(dp(28), dp(42), dp(28), dp(28))
+        val mark = TextView(this).apply { text = "elix"; textSize = 48f; setTextColor(white); setTypeface(Typeface.create("sans-serif", Typeface.BOLD)); gravity = Gravity.CENTER; letterSpacing = -0.04f }
+        content.addView(mark, LinearLayout.LayoutParams(-1, dp(90)))
+        text(content, "CHRISTIAN MEDIA NETWORK", 11, muted, true)
+        space(content, 8)
+        val tagline = TextView(this).apply { text = "Faith. Truth. Inspiration."; textSize = 16f; setTextColor(muted); gravity = Gravity.CENTER }
+        content.addView(tagline, fullWidth())
+        space(content, 34)
+        text(content, "Sign in to ELIX", 28, white, true)
+        text(content, "Connect with ministries, creators and Christian media.", 14, muted, false)
+        space(content, 22)
+        val email = android.widget.EditText(this).apply { hint = "Email address"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS; setTextColor(white); setHintTextColor(muted); setSingleLine(true); setPadding(dp(16), dp(14), dp(16), dp(14)); background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dp(10).toFloat(); setStroke(dp(1), Color.rgb(220,220,220)) } }
+        val password = android.widget.EditText(this).apply { hint = "Password"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD; setTextColor(white); setHintTextColor(muted); setSingleLine(true); setPadding(dp(16), dp(14), dp(16), dp(14)); background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dp(10).toFloat(); setStroke(dp(1), Color.rgb(220,220,220)) } }
+        content.addView(email, fullWidth()); space(content, 10); content.addView(password, fullWidth()); space(content, 16)
+        button(content, "Log in") { val e=email.text.toString().trim(); val p=password.text.toString(); if(e.isBlank()||p.length<6) info("Enter your email and password.") else AuthApi.signIn(this,e,p) { result -> runOnUiThread { info(result.message); if(result.ok && AuthApi.isSignedIn(this)) { nav.visibility=View.VISIBLE; showHome() } } } }
+        space(content, 12)
+        val create = TextView(this).apply { text = "Create new account"; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.rgb(0,149,246)); setPadding(0, dp(14), 0, dp(14)); setOnClickListener { showAuthDialog(true) } }
+        content.addView(create, fullWidth())
+        space(content, 20)
+        text(content, "By continuing, you agree to the ELIX Terms and Christian Content Policy.", 11, muted, false)
     }
 
     private fun setNav(active: String) {
@@ -117,8 +143,8 @@ class MainActivity : Activity() {
         }
         brand.addView(logo, LinearLayout.LayoutParams(dp(58), dp(58)))
         val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        text(brandText, "ELIX RADIO", 19, white, true)
-        text(brandText, "CHRISTIAN MEDIA NETWORK", 9, Color.rgb(50, 145, 255), true)
+        text(brandText, "ELIX", 22, white, true)
+        text(brandText, "CHRISTIAN MEDIA NETWORK", 9, muted, true)
         brand.addView(brandText, LinearLayout.LayoutParams(0, -2, 1f))
         content.addView(brand, fullWidth())
         space(content, 12)
@@ -276,7 +302,7 @@ class MainActivity : Activity() {
         content.setPadding(0, 0, 0, 0)
         setNav("Discover")
         val height = -1
-        val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        val frame = FrameLayout(this).apply { setBackgroundColor(Color.WHITE) }
         homeFeedFrame = frame
         val video = VideoView(this)
         homeVideo = video
@@ -814,7 +840,7 @@ class MainActivity : Activity() {
         text(content,"MY UPLOADS & CONTENT MANAGEMENT",16,white,true); val uploads=card(content)
         SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status,file_path&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}; button(uploads,"DELETE UPLOAD"){confirmDeleteUpload(item)}} } }
         if(AuthApi.currentRole(this)=="super_admin")button(content,"⚙ OPEN DEVELOPER DASHBOARD"){showDeveloperDashboard()}
-        button(content,"SIGN OUT"){AuthApi.signOut(this);showAccount()}
+        button(content,"SIGN OUT"){AuthApi.signOut(this);showWelcome()}
     }
     private fun showCreatorDirectory() {
         base("Account", "ELIX creator community", "DISCOVER CREATORS", "Find Christian creators, follow their accounts and explore everything they publish.")
@@ -944,7 +970,7 @@ class MainActivity : Activity() {
                     val callback: (AuthApi.Result) -> Unit = { result ->
                         runOnUiThread {
                             info(result.message)
-                            if (result.ok && AuthApi.isSignedIn(this)) showAccount()
+                            if (result.ok && AuthApi.isSignedIn(this)) { nav.visibility = View.VISIBLE; showHome() }
                         }
                     }
                     if (create) AuthApi.signUp(this, name, email, password, callback)
@@ -1047,7 +1073,7 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 setColor(panel)
                 cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), Color.rgb(18, 65, 126))
+                setStroke(dp(1), Color.rgb(230, 230, 230))
             }
         }
         val p = fullWidth(); p.bottomMargin = dp(10); parent.addView(v,p)
@@ -1069,9 +1095,9 @@ class MainActivity : Activity() {
             setTextColor(muted)
             setPadding(dp(13), dp(13), dp(13), dp(13))
             background = GradientDrawable().apply {
-                setColor(Color.rgb(8, 22, 43))
+                setColor(Color.rgb(245, 245, 245))
                 cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), Color.rgb(22, 86, 160))
+                setStroke(dp(1), Color.rgb(230, 230, 230))
             }
         }
         val p=fullWidth(); p.topMargin=dp(10); parent.addView(v,p)
@@ -1084,9 +1110,9 @@ class MainActivity : Activity() {
             isAllCaps = false
             setTypeface(null, Typeface.BOLD)
             setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(signalRed, Color.rgb(170, 12, 35))).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(0, 149, 246), Color.rgb(0, 110, 210))).apply {
                 cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), Color.rgb(255, 70, 83))
+                setStroke(dp(1), Color.rgb(0, 149, 246))
             }
             setOnClickListener { action() }
         }
