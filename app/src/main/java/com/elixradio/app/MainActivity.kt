@@ -1110,10 +1110,18 @@ class MainActivity : Activity() {
             UploadApi.uploadProfileImage(this, selectedUri, AuthApi.currentUserId(this)) { result ->
                 runOnUiThread {
                     if (!result.first) { info("Picture upload failed: " + result.second); return@runOnUiThread }
-                    val endpoint = if (pageId.isNullOrBlank()) "profiles?id=eq." + AuthApi.currentUserId(this) else "ministries?id=eq." + pageId
-                    val field = if (pageId.isNullOrBlank()) "avatar_url" else "logo_url"
-                    SupabaseApi.patchWithError(this, endpoint, JSONObject().put(field, result.second)) { error ->
-                        runOnUiThread { info(if (error == null) "Profile picture updated." else "Picture update failed: $error"); if (pageId.isNullOrBlank()) showAccount() else showMyPages() }
+                    val savePicture: (String?) -> Unit = { error ->
+                        runOnUiThread {
+                            info(if (error == null) "Profile picture updated successfully." else "Picture saved to storage but could not be linked to the account: $error")
+                            if (error == null) {
+                                if (pageId.isNullOrBlank()) showAccount() else showMyPages()
+                            }
+                        }
+                    }
+                    if (pageId.isNullOrBlank()) {
+                        SupabaseApi.patchWithError(this, "profiles?id=eq.${AuthApi.currentUserId(this)}", JSONObject().put("avatar_url", result.second), savePicture)
+                    } else {
+                        SupabaseApi.postWithError(this, "rpc/set_ministry_logo", JSONObject().put("target_ministry", pageId).put("new_logo_url", result.second), savePicture)
                     }
                 }
             }
