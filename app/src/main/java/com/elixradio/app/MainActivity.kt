@@ -1356,7 +1356,7 @@ class MainActivity : Activity() {
                     text(uploads, item.optString("title"), 15, gold, true)
                     text(uploads, item.optString("media_type").uppercase() + " • " + item.optString("kind").uppercase(), 11, muted, false)
                     button(uploads, if (item.optString("media_type") == "audio") "▶ PLAY AUDIO" else "OPEN CONTENT") {
-                        if (item.optString("media_type") == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path"), mediaType)
+                        if (item.optString("media_type") == "audio") playAudio(item.optString("title"), item.optString("file_path")) else openMedia(item.optString("file_path"), item.optString("media_type"))
                     }
                 }
             }
