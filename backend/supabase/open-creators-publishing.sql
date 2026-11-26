@@ -3,16 +3,12 @@
 
 -- Creator profiles are the existing public profiles rows; no ministry approval is required.
 drop policy if exists "profile read" on public.profiles;
-create policy "profile read"
-  on public.profiles for select
-  using (true);
+create policy "profile read" on public.profiles for select using (true);
 
--- Members may update their public profile details, but never their role.
+-- Members may update public profile fields; column-level grants prevent role changes.
 drop policy if exists "profile update" on public.profiles;
-create policy "profile update"
-  on public.profiles for update
-  using (id = auth.uid())
-  with check (id = auth.uid() and role = (select p.role from public.profiles p where p.id = auth.uid()));
+create policy "profile update" on public.profiles for update
+  using (id = auth.uid()) with check (id = auth.uid());
 
 grant select on public.profiles to anon, authenticated;
 grant update (display_name, avatar_url) on public.profiles to authenticated;
@@ -38,38 +34,24 @@ grant insert, delete on public.creator_follows to authenticated;
 
 create or replace view public.creator_follower_counts as
 select creator_id, count(*)::bigint as follower_count
-from public.creator_follows
-group by creator_id;
+from public.creator_follows group by creator_id;
 grant select on public.creator_follower_counts to anon, authenticated;
 
 -- Open publishing: signed-in creators' uploads are immediately published.
 alter table public.media_items alter column status set default 'approved';
 drop policy if exists "media insert" on public.media_items;
-create policy "media insert"
-  on public.media_items for insert
-  with check (
-    uploaded_by = auth.uid()
-    and status = 'approved'
-    and (ministry_id is null or public.is_ministry_member(ministry_id) or public.is_super_admin())
-  );
+create policy "media insert" on public.media_items for insert
+  with check (uploaded_by = auth.uid() and status = 'approved'
+    and (ministry_id is null or public.is_ministry_member(ministry_id) or public.is_super_admin()));
 grant insert on public.media_items to authenticated;
 
 -- Every signed-in creator can upload into their own storage folder.
 drop policy if exists "elix media owner upload" on storage.objects;
-create policy "elix media owner upload"
-  on storage.objects for insert
-  to authenticated
-  with check (
-    bucket_id = 'elix-media'
-    and (storage.foldername(name))[1] = auth.uid()::text
-  );
+create policy "elix media owner upload" on storage.objects for insert to authenticated
+  with check (bucket_id = 'elix-media' and (storage.foldername(name))[1] = auth.uid()::text);
 
--- Ensure creator-owned media can be removed without granting access to other creators' files.
+-- Creators can delete only their own stored files.
 drop policy if exists "elix media owner delete" on storage.objects;
-create policy "elix media owner delete"
-  on storage.objects for delete
-  to authenticated
-  using (
-    bucket_id = 'elix-media'
-    and ((storage.foldername(name))[1] = auth.uid()::text or public.is_super_admin())
-  );
+create policy "elix media owner delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'elix-media' and
+    ((storage.foldername(name))[1] = auth.uid()::text or public.is_super_admin()));
