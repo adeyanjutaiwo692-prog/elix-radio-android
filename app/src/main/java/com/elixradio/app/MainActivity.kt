@@ -16,6 +16,11 @@ import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.VideoView
+import android.widget.FrameLayout
+import android.graphics.BitmapFactory
+import org.json.JSONObject
+import java.net.URL
 
 class MainActivity : Activity() {
     private val bg = Color.rgb(4, 7, 17)
@@ -30,6 +35,15 @@ class MainActivity : Activity() {
     private var selectedUploadType = "audio"
     private var libraryType = "all"
     private var mediaPlayer: MediaPlayer? = null
+    private val homeFeedItems = ArrayList<JSONObject>()
+    private var homeFeedIndex = 0
+    private var homeVideo: VideoView? = null
+    private var homeImage: ImageView? = null
+    private var homeAudioPanel: LinearLayout? = null
+    private var homeFeedTitle: TextView? = null
+    private var homeFeedCategory: TextView? = null
+    private var homeFeedPosition: TextView? = null
+    private var homeFeedFrame: FrameLayout? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,37 +127,147 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
-        base("Home", "ELIX Christian Media Network", "ELIX RADIO", "Faith. Truth. Inspiration.")
-        val live = card(content)
-        text(live, "●  LIVE PROGRAMME", 12, gold, true)
-        space(live, 10)
-        text(live, "Stay connected to the Word", 23, white, true)
-        space(live, 8)
-        text(live, "Discover authorised live broadcasts, Christian radio, sermons and programmes from ministries across Nigeria.", 15, muted, false)
-        space(live, 16)
-        button(live, "▶  LISTEN / WATCH LIVE") { openLive() }
-        space(live, 10)
-        text(live, "Glory Realm Global  ·  Minister PAUL AYO", 13, muted, false)
-        space(content, 22)
-        text(content, "DISCOVER CATALOGUES", 18, white, true)
-        space(content, 10)
-        listOf(
-            "Sermons" to "Preaching and teaching of the Word",
-            "Worship" to "Worship and praise sessions",
-            "Conferences" to "Conventions, crusades and meetings",
-            "Prayer" to "Prayer meetings and intercession",
-            "Interviews & Podcasts" to "Conversations and testimonies",
-            "Bible Study" to "Bible teaching and discipleship",
-            "Children & Family" to "Faith-building family programmes"
-        ).forEach { (a,b) -> tile(content,a,b) { showLibrary() } }
-        space(content, 16)
-        text(content, "FEATURED MINISTRY", 18, white, true)
-        tile(content, "Glory Realm Global", "Minister PAUL AYO · Featured pilot ministry") { openLive() }
-        space(content, 16)
-        text(content, "COMING UP", 18, white, true)
-        tile(content, "Upcoming programmes", "See scheduled ministry broadcasts and events") { showUpcoming() }
+        content.removeAllViews()
+        content.setPadding(0, 0, 0, 0)
+        setNav("Home")
+        val height = (resources.displayMetrics.heightPixels - dp(170)).coerceAtLeast(dp(420))
+        val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        homeFeedFrame = frame
+        val video = VideoView(this)
+        homeVideo = video
+        frame.addView(video, FrameLayout.LayoutParams(-1, -1))
+        val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
+        homeImage = image
+        frame.addView(image, FrameLayout.LayoutParams(-1, -1))
+        val audioPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(28), dp(28), dp(28), dp(28))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(4, 18, 43), Color.rgb(12, 55, 105), Color.rgb(80, 8, 30)))
+            visibility = View.GONE
+        }
+        val audioMark = TextView(this).apply { text = "ELIX\n♪"; gravity = Gravity.CENTER; textSize = 48f; setTextColor(white); setTypeface(null, Typeface.BOLD) }
+        audioPanel.addView(audioMark, LinearLayout.LayoutParams(-1, dp(170)))
+        homeAudioPanel = audioPanel
+        frame.addView(audioPanel, FrameLayout.LayoutParams(-1, -1))
+        val overlay = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(45), dp(18), dp(18))
+            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xDD020611.toInt(), 0x00000000))
+        }
+        val brand = TextView(this).apply { text = "ELIX  •  DISCOVER"; textSize = 14f; setTextColor(white); setTypeface(null, Typeface.BOLD) }
+        overlay.addView(brand)
+        val spacer = View(this)
+        overlay.addView(spacer, LinearLayout.LayoutParams(1, 0, 1f))
+        val category = TextView(this).apply { textSize = 12f; setTextColor(Color.rgb(65, 160, 255)); setTypeface(null, Typeface.BOLD) }
+        homeFeedCategory = category
+        overlay.addView(category)
+        val title = TextView(this).apply { textSize = 21f; setTextColor(white); setTypeface(null, Typeface.BOLD); setPadding(0, dp(5), 0, dp(8)) }
+        homeFeedTitle = title
+        overlay.addView(title)
+        val position = TextView(this).apply { text = "Loading your feed…"; textSize = 12f; setTextColor(muted) }
+        homeFeedPosition = position
+        overlay.addView(position)
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val pause = Button(this).apply { text = "Ⅱ  PAUSE"; isAllCaps = false; setOnClickListener {
+            val current = homeFeedItems.getOrNull(homeFeedIndex)
+            if (current?.optString("media_type") == "video") { if (homeVideo?.isPlaying == true) { homeVideo?.pause(); text = "▶  PLAY" } else { homeVideo?.start(); text = "Ⅱ  PAUSE" } }
+            else if (current?.optString("media_type") == "audio") { if (mediaPlayer?.isPlaying == true) { mediaPlayer?.pause(); text = "▶  PLAY" } else { mediaPlayer?.start(); text = "Ⅱ  PAUSE" } }
+        } }
+        controls.addView(pause, LinearLayout.LayoutParams(0, dp(48), 1f))
+        val share = Button(this).apply { text = "↗  SHARE"; isAllCaps = false; setOnClickListener { shareCurrentFeedItem() } }
+        controls.addView(share, LinearLayout.LayoutParams(0, dp(48), 1f))
+        overlay.addView(controls)
+        frame.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        val touch = View.OnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> { feedTouchY = event.y; true }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val delta = event.y - feedTouchY
+                    if (kotlin.math.abs(delta) > dp(55)) { if (delta < 0) moveFeed(1) else moveFeed(-1) }
+                    true
+                }
+                else -> true
+            }
+        }
+        feedTouchY = 0f
+        frame.setOnTouchListener(touch)
+        video.setOnTouchListener(touch)
+        image.setOnTouchListener(touch)
+        audioPanel.setOnTouchListener(touch)
+        content.addView(frame, LinearLayout.LayoutParams(-1, height))
+        val hint = TextView(this).apply { text = "SWIPE UP FOR NEXT  ↑"; textSize = 10f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(0, dp(8), 0, dp(8)) }
+        content.addView(hint, fullWidth())
+        val feedLoading = TextView(this).apply { text = "Loading approved ELIX content…"; textSize = 12f; setTextColor(muted); gravity = Gravity.CENTER }
+        content.addView(feedLoading, fullWidth())
+        SupabaseApi.getWithError(this, "media_items?select=title,kind,media_type,file_path&status=eq.approved&order=created_at.desc&limit=100") { rows, error ->
+            runOnUiThread {
+                if (isFinishing || homeFeedFrame !== frame) return@runOnUiThread
+                content.removeView(feedLoading)
+                homeFeedItems.clear()
+                if (error != null) { homeFeedTitle?.text = "Could not load ELIX feed"; homeFeedCategory?.text = error; homeFeedPosition?.text = "Please try again later"; return@runOnUiThread }
+                for (i in 0 until rows.length()) homeFeedItems.add(rows.getJSONObject(i))
+                if (homeFeedItems.isEmpty()) { homeFeedTitle?.text = "Your ELIX feed is waiting"; homeFeedCategory?.text = "NO PUBLISHED CONTENT YET"; homeFeedPosition?.text = "Approved sermons, worship, videos and audio will appear here."; return@runOnUiThread }
+                homeFeedIndex = 0
+                displayHomeFeedItem()
+            }
+        }
     }
 
+    private var feedTouchY = 0f
+
+    private fun moveFeed(direction: Int) {
+        if (homeFeedItems.isEmpty()) return
+        val next = (homeFeedIndex + direction).coerceIn(0, homeFeedItems.lastIndex)
+        if (next != homeFeedIndex) { homeFeedIndex = next; displayHomeFeedItem() }
+    }
+
+    private fun displayHomeFeedItem() {
+        val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
+        stopAudio()
+        try { homeVideo?.stopPlayback() } catch (_: Exception) { }
+        homeVideo?.visibility = View.GONE
+        homeImage?.visibility = View.GONE
+        homeAudioPanel?.visibility = View.GONE
+        val title = item.optString("title", "ELIX media")
+        val category = item.optString("kind", "other").replace('_', ' ').uppercase()
+        val type = item.optString("media_type", "video")
+        val path = item.optString("file_path")
+        homeFeedTitle?.text = title
+        homeFeedCategory?.text = category + "  •  " + type.uppercase()
+        homeFeedPosition?.text = (homeFeedIndex + 1).toString() + " / " + homeFeedItems.size + "   •   ELIX CHRISTIAN MEDIA NETWORK"
+        if (path.isBlank()) return
+        val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
+        when (type) {
+            "video" -> {
+                val player = homeVideo ?: return
+                player.visibility = View.VISIBLE
+                player.setVideoURI(Uri.parse(url))
+                player.setOnPreparedListener { mp -> mp.isLooping = true; mp.start() }
+                player.setOnErrorListener { _, _, _ -> info("This video could not be played."); true }
+            }
+            "audio" -> { homeAudioPanel?.visibility = View.VISIBLE; playAudio(title, path) }
+            "image" -> {
+                val target = homeImage ?: return
+                target.visibility = View.VISIBLE
+                Thread {
+                    try {
+                        val bitmap = URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+                        runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item && bitmap != null) target.setImageBitmap(bitmap) }
+                    } catch (_: Exception) { runOnUiThread { info("Could not load this image.") } }
+                }.start()
+            }
+            else -> { homeAudioPanel?.visibility = View.VISIBLE }
+        }
+    }
+
+    private fun shareCurrentFeedItem() {
+        val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
+        val path = item.optString("file_path")
+        val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
+        val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, item.optString("title") + "\n" + url) }
+        startActivity(Intent.createChooser(send, "Share ELIX content"))
+    }
     private fun showLive() {
         base("Live Video", "Video broadcast network", "LIVE VIDEO", "Watch authorised live video broadcasts.")
         val c = card(content)
@@ -174,7 +298,7 @@ class MainActivity : Activity() {
         val list = card(content)
         text(list, "Loading catalogue…", 13, muted, false)
         val filter = if (libraryType == "all") "" else "&media_type=eq.$libraryType"
-        SupabaseApi.getWithError(this, "media_items?select=title,kind,media_type,file_path&status=eq.approved$filter&order=created_at.desc&limit=100") { rows, error ->
+        SupabaseApi.getWithError(this, "media_items?select=title,kind,media_type,file_path&status=eq.approved$filter&order=kind.asc,created_at.desc&limit=100") { rows, error ->
             runOnUiThread {
                 list.removeAllViews()
                 if (error != null) text(list, "Catalogue error: $error", 12, signalRed, false)
@@ -545,7 +669,7 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onDestroy() { stopAudio(); super.onDestroy() }
+    override fun onDestroy() { try { homeVideo?.stopPlayback() } catch (_: Exception) { }; stopAudio(); super.onDestroy() }
 
     private fun info(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
