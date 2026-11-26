@@ -26,6 +26,7 @@ object UploadApi {
                     mime.startsWith("audio/") -> "audio"
                     mime.startsWith("video/") -> "video"
                     mime.startsWith("image/") -> "image"
+                    mime == "application/pdf" -> "pdf"
                     else -> throw IllegalArgumentException("Choose an audio, video or image file.")
                 }
                 require(mediaType == selectedType) { "The selected file does not match the media type you chose." }
