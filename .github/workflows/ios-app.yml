@@ -1,0 +1,23 @@
+name: Build iOS App
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-app.yml'
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build iOS Simulator app
+        run: xcodebuild -project ios/ELIX.xcodeproj -scheme ELIX -sdk iphonesimulator -configuration Debug -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+      - name: Package simulator build
+        run: |
+          mkdir -p output
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -r "$GITHUB_WORKSPACE/output/ELIX-iOS-Simulator.zip" ELIX.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ELIX-iOS-Simulator
+          path: output/ELIX-iOS-Simulator.zip
