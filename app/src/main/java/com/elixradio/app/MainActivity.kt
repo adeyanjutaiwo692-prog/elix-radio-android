@@ -282,6 +282,9 @@ class MainActivity : Activity() {
         if (AuthApi.isSignedIn(this)) {
             text(content, "Signed in as " + AuthApi.currentName(this).ifBlank { "ELIX listener" }, 16, gold, true)
             text(content, "Account role: " + AuthApi.currentRole(this).replace('_', ' ').uppercase(), 12, muted, true)
+            AuthApi.currentRoleError(this).takeIf { it.isNotBlank() }?.let {
+                text(content, "Role sync diagnostic: $it", 11, red, false)
+            }
             space(content, 12)
             if (AuthApi.currentRole(this) == "super_admin") {
                 button(content, "⚙  OPEN DEVELOPER DASHBOARD") { showDeveloperDashboard() }
