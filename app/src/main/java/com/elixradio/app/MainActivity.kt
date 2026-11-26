@@ -173,10 +173,11 @@ class MainActivity : Activity() {
                 if (AuthApi.isSignedIn(this)) profile.addView(followButton)
                 fun refreshFollowState() {
                     SupabaseApi.getWithError(this, "ministry_follower_counts?select=follower_count&ministry_id=eq.$pageId&limit=1") { counts, countError ->
-                        SupabaseApi.getWithError(this, "ministry_follows?select=user_id&user_id=eq.${AuthApi.currentUserId(this)}&ministry_id=eq.$pageId&limit=1") { mineRows, followError ->
-                            runOnUiThread {
-                                followerCount.text = if (countError == null) "${if (counts.length() > 0) counts.getJSONObject(0).optLong("follower_count") else 0L} followers" else "Followers"
-                                if (AuthApi.isSignedIn(this)) {
+                        val total = if (countError == null && counts.length() > 0) counts.getJSONObject(0).optLong("follower_count") else 0L
+                        runOnUiThread { followerCount.text = if (countError == null) "$total followers" else "Followers" }
+                        if (AuthApi.isSignedIn(this)) {
+                            SupabaseApi.getWithError(this, "ministry_follows?select=user_id&user_id=eq.${AuthApi.currentUserId(this)}&ministry_id=eq.$pageId&limit=1") { mineRows, followError ->
+                                runOnUiThread {
                                     val mine = followError == null && mineRows.length() > 0
                                     followButton.text = if (mine) "FOLLOWING · TAP TO UNFOLLOW" else "＋ FOLLOW PAGE"
                                     followButton.setOnClickListener {
