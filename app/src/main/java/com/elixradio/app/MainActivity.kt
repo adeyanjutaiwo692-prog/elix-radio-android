@@ -175,6 +175,41 @@ class MainActivity : Activity() {
         android.app.AlertDialog.Builder(this).setTitle("Create public page").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Submit",null).create().also { d -> d.setOnShowListener { d.getButton(-1).setOnClickListener { val n=name.text.toString().trim(); if(n.isBlank()){name.error="Enter a name";return@setOnClickListener}; val slug=n.lowercase().replace(Regex("[^a-z0-9]+"),"-").trim('-')+"-"+System.currentTimeMillis().toString().takeLast(5); val body=JSONObject().put("name",n).put("slug",slug).put("description",desc.text.toString()).put("city",city.text.toString()).put("page_type",if(type.selectedItemPosition==1)"public_figure" else "ministry").put("owner_id",AuthApi.currentUserId(this)); SupabaseApi.postWithError(this,"ministries",body){ e -> runOnUiThread { info(if(e==null)"Page submitted for ELIX approval." else "Page creation failed: $e"); if(e==null)showAccount() } }; d.dismiss() } }; d.show() }
     }
 
+
+    private fun editProfileDialog() {
+        val name = android.widget.EditText(this).apply { hint = "Display name"; setText(AuthApi.currentName(this@MainActivity)); setTextColor(white) }
+        android.app.AlertDialog.Builder(this).setTitle("Edit account profile").setView(name).setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", null).create().also { d ->
+                d.setOnShowListener { d.getButton(-1).setOnClickListener {
+                    val value = name.text.toString().trim()
+                    if (value.isBlank()) { name.error = "Enter your display name"; return@setOnClickListener }
+                    SupabaseApi.patchWithError(this, "profiles?id=eq.${AuthApi.currentUserId(this)}", JSONObject().put("display_name", value)) { e ->
+                        runOnUiThread { info(if (e == null) "Profile updated. Sign in again to refresh the displayed name." else "Profile update failed: $e"); if (e == null) showAccount() }
+                    }
+                    d.dismiss()
+                } }
+                d.show()
+            }
+    }
+
+    private fun editPageDialog(page: JSONObject) {
+        val name = android.widget.EditText(this).apply { hint = "Page name"; setText(page.optString("name")); setTextColor(white) }
+        val desc = android.widget.EditText(this).apply { hint = "Description"; setText(page.optString("description")); setTextColor(white) }
+        val city = android.widget.EditText(this).apply { hint = "City"; setText(page.optString("city")); setTextColor(white) }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), 0); addView(name); addView(desc); addView(city) }
+        android.app.AlertDialog.Builder(this).setTitle("Edit page profile").setView(box).setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", null).create().also { d ->
+                d.setOnShowListener { d.getButton(-1).setOnClickListener {
+                    val body = JSONObject().put("name", name.text.toString().trim()).put("description", desc.text.toString().trim()).put("city", city.text.toString().trim())
+                    SupabaseApi.patchWithError(this, "ministries?id=eq.${page.optString("id")}", body) { e ->
+                        runOnUiThread { info(if (e == null) "Page profile updated." else "Page update failed: $e"); if (e == null) showAccount() }
+                    }
+                    d.dismiss()
+                } }
+                d.show()
+            }
+    }
+
     private fun editMediaDialog(item: JSONObject) {
         val title=android.widget.EditText(this).apply { setText(item.optString("title")); setTextColor(white) }; val desc=android.widget.EditText(this).apply { hint="Description"; setText(item.optString("description")); setTextColor(white) }
         val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),0); addView(title); addView(desc) }
@@ -599,9 +634,10 @@ class MainActivity : Activity() {
         base("Account","Your ELIX identity","MY ACCOUNT","Your profile, pages, uploads and creator tools are managed here.")
         if (!AuthApi.isSignedIn(this)) { button(content,"CREATE ACCOUNT"){showAuthDialog(true)}; button(content,"SIGN IN"){showAuthDialog(false)}; notice(content,"Create an account to publish under your profile or manage a ministry/public-figure page."); return }
         text(content,AuthApi.currentName(this).ifBlank{"ELIX member"},21,white,true); text(content,"Account role: "+AuthApi.currentRole(this).replace("_"," ").uppercase(),12,muted,true)
+        button(content,"⚙ ACCOUNT SETTINGS / EDIT PROFILE"){ editProfileDialog() }
         button(content,"＋ CREATE MINISTRY / PUBLIC FIGURE PAGE"){createPageDialog()}; button(content,"＋ UPLOAD CONTENT"){chooseUploadFile()}
         text(content,"MY PAGES",16,white,true); val pages=card(content)
-        SupabaseApi.getWithError(this,"ministries?select=id,name,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc"){ rows,e -> runOnUiThread { pages.removeAllViews(); if(e!=null||rows.length()==0)text(pages,"You have not created a page yet.",13,muted,false) else for(i in 0 until rows.length()){val p=rows.getJSONObject(i); tile(pages,p.optString("name"),p.optString("page_type").uppercase()+" • "+if(p.optBoolean("approved"))"PUBLIC" else "AWAITING APPROVAL"){showCreatorPage(p.optString("id"))}} } }
+        SupabaseApi.getWithError(this,"ministries?select=id,name,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc"){ rows,e -> runOnUiThread { pages.removeAllViews(); if(e!=null||rows.length()==0)text(pages,"You have not created a page yet.",13,muted,false) else for(i in 0 until rows.length()){val p=rows.getJSONObject(i); tile(pages,p.optString("name"),p.optString("page_type").uppercase()+" • "+if(p.optBoolean("approved"))"PUBLIC" else "AWAITING APPROVAL"){showCreatorPage(p.optString("id"))}; button(pages,"EDIT PAGE PROFILE"){editPageDialog(p)}} } }
         text(content,"MY UPLOADS & CONTENT MANAGEMENT",16,white,true); val uploads=card(content)
         SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}} } }
         if(AuthApi.currentRole(this)=="super_admin")button(content,"⚙ OPEN DEVELOPER DASHBOARD"){showDeveloperDashboard()}
