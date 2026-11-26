@@ -175,6 +175,41 @@ object UploadApi {
         }
     }
 
+    fun uploadProfileImage(context: Context, uri: Uri, userId: String, callback: (Pair<Boolean, String>) -> Unit) {
+        thread {
+            val result = try {
+                val token = AuthApi.accessToken(context)
+                require(token.isNotBlank() && userId.isNotBlank()) { "Please sign in first." }
+                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                require(mime in listOf("image/jpeg", "image/png", "image/webp")) { "Choose a JPG, PNG or WebP image." }
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("Could not read this image.")
+                require(bytes.isNotEmpty() && bytes.size <= 10 * 1024 * 1024) { "Profile pictures must be under 10 MB." }
+                val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
+                val path = userId + "/profile-" + UUID.randomUUID() + "." + ext
+                val endpoint = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/elix-public/" + Uri.encode(path, "/")
+                val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 20000
+                    readTimeout = 60000
+                    doOutput = true
+                    setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
+                    setRequestProperty("Authorization", "Bearer " + token)
+                    setRequestProperty("Content-Type", mime)
+                    setRequestProperty("x-upsert", "true")
+                    setFixedLengthStreamingMode(bytes.size)
+                    outputStream.use { it.write(bytes) }
+                }
+                val code = connection.responseCode
+                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                connection.disconnect()
+                if (code !in 200..299) throw IllegalStateException("Storage HTTP " + code + ": " + body)
+                Pair(true, BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-public/" + Uri.encode(path, "/"))
+            } catch (e: Exception) { Pair(false, e.message ?: "Image upload failed.") }
+            callback(result)
+        }
+    }
+
     fun deleteStoredFile(context: Context, path: String, callback: (String?) -> Unit) {
         thread {
             var error: String? = null
