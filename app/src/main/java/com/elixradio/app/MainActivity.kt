@@ -167,7 +167,29 @@ class MainActivity : Activity() {
         SupabaseApi.getWithError(this, "ministries?select=id,name,description,city,page_type&id=eq.$pageId&limit=1") { pages, error ->
             runOnUiThread { profile.removeAllViews(); if (error != null || pages.length() == 0) text(profile, "Page could not be loaded.", 13, signalRed, false) else {
                 val p = pages.getJSONObject(0); text(profile, p.optString("name"), 23, white, true); text(profile, p.optString("page_type").replace("_"," ").uppercase() + " • " + p.optString("city","Nigeria"), 12, gold, true); text(profile, p.optString("description"), 14, muted, false)
-                if (AuthApi.isSignedIn(this)) button(profile, "＋ FOLLOW PAGE") { SupabaseApi.postWithError(this, "ministry_follows", JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)) { e -> runOnUiThread { info(if (e == null) "Page followed." else "Could not follow: $e") } } }
+                val followerCount = TextView(this).apply { textSize = 13f; setTextColor(muted) }
+                profile.addView(followerCount)
+                val followButton = Button(this).apply { isAllCaps = false }
+                if (AuthApi.isSignedIn(this)) profile.addView(followButton)
+                fun refreshFollowState() {
+                    SupabaseApi.getWithError(this, "ministry_follows?select=user_id&ministry_id=eq.$pageId&limit=1000") { followers, fe ->
+                        runOnUiThread {
+                            followerCount.text = if (fe == null) "${followers.length()} followers" else "Followers"
+                            if (AuthApi.isSignedIn(this)) {
+                                val mine = (0 until followers.length()).any { followers.getJSONObject(it).optString("user_id") == AuthApi.currentUserId(this) }
+                                followButton.text = if (mine) "FOLLOWING · TAP TO UNFOLLOW" else "＋ FOLLOW PAGE"
+                                followButton.setOnClickListener {
+                                    if (mine) SupabaseApi.deleteWithError(this, "ministry_follows?user_id=eq.${AuthApi.currentUserId(this)}&ministry_id=eq.$pageId") { e ->
+                                        runOnUiThread { info(if (e == null) "Unfollowed page." else "Could not unfollow: $e"); refreshFollowState() }
+                                    } else SupabaseApi.postWithError(this, "ministry_follows", JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)) { e ->
+                                        runOnUiThread { info(if (e == null) "Now following this page." else "Could not follow: $e"); refreshFollowState() }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                refreshFollowState()
             } }
         }
         text(content, "UPCOMING PROGRAMMES & CONFERENCES", 16, white, true); val programmes = card(content)
@@ -224,6 +246,23 @@ class MainActivity : Activity() {
             }
     }
 
+
+    private fun confirmDeleteUpload(item: JSONObject) {
+        android.app.AlertDialog.Builder(this).setTitle("Delete uploaded file?")
+            .setMessage("\"" + item.optString("title") + "\" will be removed from ELIX and its stored file deleted. This cannot be undone.")
+            .setNegativeButton("Cancel", null).setPositiveButton("DELETE") { _, _ ->
+                val id = item.optString("id")
+                val path = item.optString("file_path")
+                if (id.isBlank() || path.isBlank()) { info("This upload is missing its file reference."); return@setPositiveButton }
+                UploadApi.deleteStoredFile(this, path) { storageError ->
+                    if (storageError != null) runOnUiThread { info("File deletion failed: $storageError") }
+                    else SupabaseApi.deleteWithError(this, "media_items?id=eq.$id&uploaded_by=eq.${AuthApi.currentUserId(this)}") { dbError ->
+                        runOnUiThread { info(if (dbError == null) "Upload deleted." else "File removed, but catalogue cleanup failed: $dbError"); showAccount() }
+                    }
+                }
+            }.show()
+    }
+
     private fun editMediaDialog(item: JSONObject) {
         val title=android.widget.EditText(this).apply { setText(item.optString("title")); setTextColor(white) }; val desc=android.widget.EditText(this).apply { hint="Description"; setText(item.optString("description")); setTextColor(white) }
         val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),0); addView(title); addView(desc) }
@@ -233,7 +272,7 @@ class MainActivity : Activity() {
         content.removeAllViews()
         content.setPadding(0, 0, 0, 0)
         setNav("Discover")
-        val height = (resources.displayMetrics.heightPixels - dp(170)).coerceAtLeast(dp(420))
+        val height = -1
         val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         homeFeedFrame = frame
         val video = VideoView(this)
@@ -271,21 +310,6 @@ class MainActivity : Activity() {
         val position = TextView(this).apply { text = "Loading your feed…"; textSize = 12f; setTextColor(muted) }
         homeFeedPosition = position
         overlay.addView(position)
-        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val pause = Button(this).apply { text = "Ⅱ  PAUSE"; isAllCaps = false; setOnClickListener {
-            val current = homeFeedItems.getOrNull(homeFeedIndex)
-            if (current?.optString("media_type") == "video") { if (homeVideo?.isPlaying == true) { homeVideo?.pause(); text = "▶  PLAY" } else { homeVideo?.start(); text = "Ⅱ  PAUSE" } }
-            else if (current?.optString("media_type") == "audio") { if (mediaPlayer?.isPlaying == true) { mediaPlayer?.pause(); text = "▶  PLAY" } else { mediaPlayer?.start(); text = "Ⅱ  PAUSE" } }
-        } }
-        controls.addView(pause, LinearLayout.LayoutParams(0, dp(48), 1f))
-        val like = Button(this).apply { text = "♡  LIKE"; isAllCaps = false; setOnClickListener {
-            val item = homeFeedItems.getOrNull(homeFeedIndex)
-            if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "like"); text = "♥  LIKED" }
-        } }
-        controls.addView(like, LinearLayout.LayoutParams(0, dp(48), 1f))
-        val share = Button(this).apply { text = "↗"; isAllCaps = false; setOnClickListener { shareCurrentFeedItem() } }
-        controls.addView(share, LinearLayout.LayoutParams(0, dp(48), 1f))
-        overlay.addView(controls)
         val actionRail = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -315,6 +339,7 @@ class MainActivity : Activity() {
         }
         railAction("↗", "SHARE") { shareCurrentFeedItem() }
         railAction("★", "SUBSCRIBE") { subscribeCurrentCreator() }
+        railAction("▤", "COMMENTS") { openCommentsForCurrentItem() }
         val railParams = FrameLayout.LayoutParams(dp(70), -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL)
         railParams.rightMargin = dp(8)
         frame.addView(actionRail, railParams)
@@ -342,14 +367,9 @@ class MainActivity : Activity() {
         image.setOnTouchListener(touch)
         audioPanel.setOnTouchListener(touch)
         content.addView(frame, LinearLayout.LayoutParams(-1, height))
-        val hint = TextView(this).apply { text = "SWIPE UP FOR NEXT  ↑"; textSize = 10f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(0, dp(8), 0, dp(8)) }
-        content.addView(hint, fullWidth())
-        val feedLoading = TextView(this).apply { text = "Loading approved ELIX content…"; textSize = 12f; setTextColor(muted); gravity = Gravity.CENTER }
-        content.addView(feedLoading, fullWidth())
-        SupabaseApi.getWithError(this, "media_items?select=id,title,kind,media_type,file_path,duration_seconds&status=eq.approved&order=created_at.desc&limit=200") { rows, error ->
+        SupabaseApi.getWithError(this, "media_items?select=id,title,kind,media_type,file_path,duration_seconds,ministry_id&status=eq.approved&order=created_at.desc&limit=200") { rows, error ->
             runOnUiThread {
                 if (isFinishing || homeFeedFrame !== frame) return@runOnUiThread
-                content.removeView(feedLoading)
                 homeFeedItems.clear()
                 if (error != null) { homeFeedTitle?.text = "Could not load ELIX feed"; homeFeedCategory?.text = error; homeFeedPosition?.text = "Please try again later"; return@runOnUiThread }
                 for (i in 0 until rows.length()) homeFeedItems.add(rows.getJSONObject(i))
@@ -364,6 +384,60 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+
+    private fun openCommentsForCurrentItem() {
+        val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
+        val mediaId = item.optString("id")
+        val panelView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(8))
+            setBackgroundColor(panel)
+        }
+        val commentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply { addView(commentList) }
+        panelView.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val input = android.widget.EditText(this).apply { hint = "Add a comment…"; setTextColor(white); setHintTextColor(muted) }
+        val send = Button(this).apply { text = "POST COMMENT"; isAllCaps = false }
+        val composer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(input); addView(send) }
+        panelView.addView(composer, LinearLayout.LayoutParams(-1, -2))
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Comments · " + item.optString("title"))
+            .setView(panelView).setPositiveButton("CLOSE", null).create()
+        fun loadComments() {
+            commentList.removeAllViews()
+            text(commentList, "Loading comments…", 13, muted, false)
+            SupabaseApi.getWithError(this, "media_comments?select=id,comment_text,created_at,profiles(display_name)&media_id=eq.$mediaId&order=created_at.asc&limit=200") { rows, error ->
+                runOnUiThread {
+                    commentList.removeAllViews()
+                    if (error != null) text(commentList, "Comments could not be loaded: $error", 12, signalRed, false)
+                    else if (rows.length() == 0) text(commentList, "No comments yet. Start the conversation.", 13, muted, false)
+                    else for (i in 0 until rows.length()) {
+                        val c = rows.getJSONObject(i)
+                        val profile = c.optJSONObject("profiles")
+                        text(commentList, profile?.optString("display_name").orEmpty().ifBlank { "ELIX member" }, 12, gold, true)
+                        text(commentList, c.optString("comment_text"), 14, white, false)
+                        space(commentList, 8)
+                    }
+                }
+            }
+        }
+        send.setOnClickListener {
+            if (!AuthApi.isSignedIn(this)) { info("Sign in to comment."); return@setOnClickListener }
+            val value = input.text.toString().trim()
+            if (value.isBlank()) { input.error = "Write a comment first"; return@setOnClickListener }
+            send.isEnabled = false
+            val body = JSONObject().put("media_id", mediaId).put("user_id", AuthApi.currentUserId(this)).put("comment_text", value)
+            SupabaseApi.postWithError(this, "media_comments", body) { e ->
+                runOnUiThread {
+                    send.isEnabled = true
+                    if (e == null) { input.setText(""); loadComments() } else info("Comment could not be posted: $e")
+                }
+            }
+        }
+        loadComments()
+        dialog.show()
+        dialog.window?.setLayout(-1, (resources.displayMetrics.heightPixels * 0.72f).toInt())
     }
 
     private fun followCurrentCreator() {
@@ -703,7 +777,7 @@ class MainActivity : Activity() {
         text(content,"MY PAGES",16,white,true); val pages=card(content)
         SupabaseApi.getWithError(this,"ministries?select=id,name,description,city,page_type,approved&owner_id=eq.${AuthApi.currentUserId(this)}&order=created_at.desc"){ rows,e -> runOnUiThread { pages.removeAllViews(); if(e!=null||rows.length()==0)text(pages,"You have not created a page yet.",13,muted,false) else for(i in 0 until rows.length()){val p=rows.getJSONObject(i); tile(pages,p.optString("name"),p.optString("page_type").uppercase()+" • "+if(p.optBoolean("approved"))"PUBLIC" else "AWAITING APPROVAL"){showCreatorPage(p.optString("id"))}; button(pages,"EDIT PAGE PROFILE"){editPageDialog(p)}} } }
         text(content,"MY UPLOADS & CONTENT MANAGEMENT",16,white,true); val uploads=card(content)
-        SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}} } }
+        SupabaseApi.getWithError(this,"media_items?select=id,title,description,kind,media_type,status&uploaded_by=eq.${AuthApi.currentUserId(this)}&order=created_at.desc&limit=100"){ rows,e -> runOnUiThread { uploads.removeAllViews(); if(e!=null)text(uploads,"Could not load uploads: $e",12,signalRed,false) else if(rows.length()==0)text(uploads,"Your uploaded files will appear here under this account.",13,muted,false) else for(i in 0 until rows.length()){val item=rows.getJSONObject(i); text(uploads,item.optString("title"),15,gold,true); text(uploads,item.optString("media_type").uppercase()+" • "+item.optString("kind").uppercase()+" • "+item.optString("status").uppercase(),11,muted,false); button(uploads,"EDIT CONTENT"){editMediaDialog(item)}; button(uploads,"DELETE UPLOAD"){confirmDeleteUpload(item)}} } }
         if(AuthApi.currentRole(this)=="super_admin")button(content,"⚙ OPEN DEVELOPER DASHBOARD"){showDeveloperDashboard()}
         button(content,"SIGN OUT"){AuthApi.signOut(this);showAccount()}
     }
