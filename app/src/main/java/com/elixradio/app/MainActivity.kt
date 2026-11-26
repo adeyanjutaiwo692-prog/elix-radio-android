@@ -468,6 +468,7 @@ class MainActivity : Activity() {
     }
 
     private var feedTouchY = 0f
+    private var feedTransitionRunning = false
 
     // Personal relevance is balanced with category variety so the FYP does not
     // become a wall of one content type after a few strong engagement signals.
@@ -508,9 +509,33 @@ class MainActivity : Activity() {
     }
 
     private fun moveFeed(direction: Int) {
-        if (homeFeedItems.isEmpty()) return
+        if (homeFeedItems.isEmpty() || feedTransitionRunning) return
         val next = (homeFeedIndex + direction).coerceIn(0, homeFeedItems.lastIndex)
-        if (next != homeFeedIndex) { homeFeedIndex = next; displayHomeFeedItem() }
+        if (next == homeFeedIndex) return
+        val frame = homeFeedFrame
+        if (frame == null || frame.height <= 0) {
+            homeFeedIndex = next
+            displayHomeFeedItem()
+            return
+        }
+        // Slide the current full-screen item away, then bring the next item
+        // in from the opposite edge for a continuous TikTok-style feed.
+        feedTransitionRunning = true
+        val travel = frame.height.toFloat()
+        val outgoingY = if (direction > 0) -travel else travel
+        val incomingY = -outgoingY
+        frame.animate().cancel()
+        frame.animate().translationY(outgoingY).setDuration(240L).withEndAction {
+            if (homeFeedFrame !== frame || isFinishing) {
+                feedTransitionRunning = false
+                return@withEndAction
+            }
+            homeFeedIndex = next
+            displayHomeFeedItem()
+            frame.translationY = incomingY
+            frame.animate().translationY(0f).setDuration(280L)
+                .withEndAction { feedTransitionRunning = false }.start()
+        }.start()
     }
 
     private fun displayHomeFeedItem() {
