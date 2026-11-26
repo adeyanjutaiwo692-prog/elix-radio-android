@@ -172,17 +172,19 @@ class MainActivity : Activity() {
                 val followButton = Button(this).apply { isAllCaps = false }
                 if (AuthApi.isSignedIn(this)) profile.addView(followButton)
                 fun refreshFollowState() {
-                    SupabaseApi.getWithError(this, "ministry_follows?select=user_id&ministry_id=eq.$pageId&limit=1000") { followers, fe ->
-                        runOnUiThread {
-                            followerCount.text = if (fe == null) "${followers.length()} followers" else "Followers"
-                            if (AuthApi.isSignedIn(this)) {
-                                val mine = (0 until followers.length()).any { followers.getJSONObject(it).optString("user_id") == AuthApi.currentUserId(this) }
-                                followButton.text = if (mine) "FOLLOWING · TAP TO UNFOLLOW" else "＋ FOLLOW PAGE"
-                                followButton.setOnClickListener {
-                                    if (mine) SupabaseApi.deleteWithError(this, "ministry_follows?user_id=eq.${AuthApi.currentUserId(this)}&ministry_id=eq.$pageId") { e ->
-                                        runOnUiThread { info(if (e == null) "Unfollowed page." else "Could not unfollow: $e"); refreshFollowState() }
-                                    } else SupabaseApi.postWithError(this, "ministry_follows", JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)) { e ->
-                                        runOnUiThread { info(if (e == null) "Now following this page." else "Could not follow: $e"); refreshFollowState() }
+                    SupabaseApi.getWithError(this, "ministry_follower_counts?select=follower_count&ministry_id=eq.$pageId&limit=1") { counts, countError ->
+                        SupabaseApi.getWithError(this, "ministry_follows?select=user_id&user_id=eq.${AuthApi.currentUserId(this)}&ministry_id=eq.$pageId&limit=1") { mineRows, followError ->
+                            runOnUiThread {
+                                followerCount.text = if (countError == null) "${if (counts.length() > 0) counts.getJSONObject(0).optLong("follower_count") else 0L} followers" else "Followers"
+                                if (AuthApi.isSignedIn(this)) {
+                                    val mine = followError == null && mineRows.length() > 0
+                                    followButton.text = if (mine) "FOLLOWING · TAP TO UNFOLLOW" else "＋ FOLLOW PAGE"
+                                    followButton.setOnClickListener {
+                                        if (mine) SupabaseApi.deleteWithError(this, "ministry_follows?user_id=eq.${AuthApi.currentUserId(this)}&ministry_id=eq.$pageId") { e ->
+                                            runOnUiThread { info(if (e == null) "Unfollowed page." else "Could not unfollow: $e"); refreshFollowState() }
+                                        } else SupabaseApi.postWithError(this, "ministry_follows", JSONObject().put("user_id", AuthApi.currentUserId(this)).put("ministry_id", pageId)) { e ->
+                                            runOnUiThread { info(if (e == null) "Now following this page." else "Could not follow: $e"); refreshFollowState() }
+                                        }
                                     }
                                 }
                             }
