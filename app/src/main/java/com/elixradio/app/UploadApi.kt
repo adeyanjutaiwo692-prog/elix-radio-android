@@ -15,7 +15,7 @@ object UploadApi {
     private const val MAX_FILE_BYTES = 5L * 1024L * 1024L * 1024L
     private const val CHUNK_BYTES = 6 * 1024 * 1024
 
-    fun upload(context: Context, uri: Uri, title: String, selectedType: String, category: String, callback: (Result) -> Unit) {
+    fun upload(context: Context, uri: Uri, title: String, selectedType: String, category: String, pageId: String? = null, callback: (Result) -> Unit) {
         thread {
             val result = try {
                 val token = AuthApi.accessToken(context)
@@ -137,6 +137,7 @@ object UploadApi {
                     .put("media_type", mediaType)
                     .put("file_path", path)
                     .put("rights_confirmed", true)
+                    .apply { if (!pageId.isNullOrBlank()) put("ministry_id", pageId) }
                 val record = (URL(BuildConfig.SUPABASE_URL.trimEnd('/') + "/rest/v1/media_items").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 20000
