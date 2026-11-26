@@ -82,7 +82,7 @@ class MainActivity : Activity() {
         listOf("Home", "Discover", "Explore", "Account").forEach { label ->
             val symbol = when(label) { "Home" -> "⌂"; "Discover" -> "▶"; "Explore" -> "◎"; else -> "◉" }
             val b = TextView(this).apply {
-                text = "$symbol\\n$label"
+                text = "$symbol\n$label"
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setTypeface(null, if (label == active) Typeface.BOLD else Typeface.NORMAL)
@@ -294,7 +294,7 @@ class MainActivity : Activity() {
         }
         fun railAction(symbol: String, label: String, action: () -> Unit) {
             val item = TextView(this).apply {
-                text = "$symbol\\n$label"
+                text = "$symbol\n$label"
                 gravity = Gravity.CENTER
                 textSize = 11f
                 setTextColor(white)
