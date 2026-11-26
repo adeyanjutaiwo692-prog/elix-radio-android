@@ -61,14 +61,7 @@ set public = true,
       'video/mp4','video/quicktime','application/pdf','image/jpeg','image/png','image/webp'
     ];
 
-/* The global Storage upload limit in the Supabase dashboard must also be at least 5 GB. */
-/*
-    allowed_mime_types = array[
-      'audio/mpeg','audio/mp4','audio/aac','audio/wav','audio/x-wav','audio/ogg',
-      'video/mp4','video/quicktime','application/pdf',
-      'image/jpeg','image/png','image/webp'
-    ]
-where id = 'elix-media'; */
+-- The global Storage upload limit in the Supabase dashboard must also be at least 5 GB.
 
 drop policy if exists "ELIX media files are publicly readable" on storage.objects;
 create policy "ELIX media files are publicly readable"
