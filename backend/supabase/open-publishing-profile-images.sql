@@ -43,3 +43,12 @@ create policy "ELIX profile image delete" on storage.objects
 
 grant select on public.ministries to anon, authenticated;
 grant select on public.media_items to anon, authenticated;
+
+
+-- Creators may update their own display metadata (including generated thumbnails),
+-- but cannot approve their own media or alter moderation status.
+drop policy if exists "ELIX media owner metadata update" on public.media_items;
+create policy "ELIX media owner metadata update" on public.media_items
+  for update to authenticated using (uploaded_by=auth.uid())
+  with check (uploaded_by=auth.uid());
+grant update (title, description, thumbnail_url) on public.media_items to authenticated;
