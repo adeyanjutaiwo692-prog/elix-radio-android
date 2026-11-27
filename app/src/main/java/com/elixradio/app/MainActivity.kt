@@ -1243,7 +1243,7 @@ class MainActivity : Activity() {
                 if (!AuthApi.isSignedIn(this@MainActivity)) { info("Sign in to comment."); return@setOnClickListener }
                 val value = input.text.toString().trim()
                 if (value.isBlank()) { input.error = "Write a comment first"; return@setOnClickListener }
-                isEnabled = false
+                send.isEnabled = false
                 val body = JSONObject()
                     .put("media_id", mediaId)
                     .put("user_id", AuthApi.currentUserId(this@MainActivity))
