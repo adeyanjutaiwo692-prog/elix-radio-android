@@ -699,15 +699,6 @@ class MainActivity : Activity() {
     }
 
 
-        base("Ecosystem", "ELIX ECOSYSTEM", section, description)
-        val preview = card(content)
-        text(preview, "COMING SOON", 11, gold, true)
-        space(preview, 7)
-        text(preview, "This experience is part of the ELIX roadmap.", 17, white, true)
-        text(preview, "We are building it as an integrated feature of ELIX, with its own tools and content while sharing the same account.", 13, muted, false)
-        button(content, "BACK TO ELIX ECOSYSTEM") { showExploreHub() }
-    }
-
     private fun showBroadcasts() {
         base("Broadcasts", "Listen and watch live", "RADIO & LIVE", "Broadcasts are separate from ministry pages and Discover.")
         tile(content, "ELIX RADIO", "Recorded audio programmes, sermons and music.") { showRadio() }
