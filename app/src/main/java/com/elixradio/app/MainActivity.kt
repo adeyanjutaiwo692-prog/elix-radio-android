@@ -437,6 +437,268 @@ class MainActivity : Activity() {
     }
 
     private fun showEcosystemPreview(section: String, description: String) {
+        when (section) {
+            "ELIX Word" -> { showWord(); return }
+            "ELIX Community" -> { showCommunity(); return }
+            "ELIX Academy" -> { showAcademy(); return }
+        }
+        base("Ecosystem", "ELIX ECOSYSTEM", section, description)
+        val preview = card(content)
+        text(preview, "COMING SOON", 11, gold, true)
+        space(preview, 7)
+        text(preview, "This experience is part of the ELIX roadmap.", 17, white, true)
+        text(preview, "We are building it as an integrated feature of ELIX, with its own tools and content while sharing the same account.", 13, muted, false)
+        button(content, "BACK TO ELIX ECOSYSTEM") { showExploreHub() }
+    }
+
+    private fun requireMember(action: () -> Unit) {
+        if (!AuthApi.isSignedIn(this)) {
+            info("Sign in to use this ELIX feature.")
+            showAuthDialog(false)
+        } else action()
+    }
+
+    private fun showWord() {
+        base("ELIX Word", "SCRIPTURE & SPIRITUAL GROWTH", "Grow in the Word", "Bible reading plans, daily devotionals and personal study.")
+        val devotional = card(content)
+        text(devotional, "DAILY DEVOTIONAL", 11, gold, true)
+        val devotionalBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        devotional.addView(devotionalBody, fullWidth())
+        SupabaseApi.getWithError(this, "devotionals?select=id,title,scripture_reference,reflection,prayer,created_at&is_published=eq.true&order=created_at.desc&limit=1") { rows, error ->
+            runOnUiThread {
+                devotionalBody.removeAllViews()
+                if (error != null) text(devotionalBody, "Devotional content is not available yet. Please try again later.", 13, muted, false)
+                else if (rows.length() == 0) text(devotionalBody, "Your daily devotional will appear here when published by ELIX.", 13, muted, false)
+                else {
+                    val item = rows.getJSONObject(0)
+                    text(devotionalBody, item.optString("title"), 19, white, true)
+                    space(devotionalBody, 6)
+                    text(devotionalBody, item.optString("scripture_reference"), 12, gold, true)
+                    space(devotionalBody, 8)
+                    text(devotionalBody, item.optString("reflection"), 14, muted, false)
+                    if (item.optString("prayer").isNotBlank()) {
+                        space(devotionalBody, 8)
+                        text(devotionalBody, "PRAYER", 11, gold, true)
+                        text(devotionalBody, item.optString("prayer"), 13, muted, false)
+                    }
+                }
+            }
+        }
+        space(content, 8)
+        text(content, "BIBLE READING PLANS", 16, white, true)
+        val plans = card(content)
+        SupabaseApi.getWithError(this, "reading_plans?select=id,title,description,duration_days&is_published=eq.true&order=created_at.desc") { rows, error ->
+            runOnUiThread {
+                plans.removeAllViews()
+                if (error != null) text(plans, "Could not load reading plans: $error", 13, signalRed, false)
+                else if (rows.length() == 0) text(plans, "Reading plans will appear here soon.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val plan = rows.getJSONObject(i)
+                    text(plans, plan.optString("title"), 16, gold, true)
+                    text(plans, plan.optString("description"), 13, muted, false)
+                    text(plans, plan.optInt("duration_days").toString() + " day plan", 11, muted, false)
+                    button(plans, "OPEN READING PLAN") { openReadingPlan(plan.optString("id"), plan.optString("title")) }
+                    space(plans, 8)
+                }
+            }
+        }
+        notice(content, "ELIX reading plans provide Scripture references and guided reflections. Use a Bible translation you have permission to access.")
+    }
+
+    private fun openReadingPlan(planId: String, title: String) {
+        base("Reading plan", "ELIX WORD", title, "Follow each day's Scripture reading and mark your progress.")
+        if (!AuthApi.isSignedIn(this)) notice(content, "Sign in to save your reading progress.")
+        val days = card(content)
+        SupabaseApi.getWithError(this, "reading_plan_days?select=id,day_number,scripture_reference,reflection&plan_id=eq.$planId&order=day_number.asc") { rows, error ->
+            runOnUiThread {
+                days.removeAllViews()
+                if (error != null) text(days, "Could not load this plan: $error", 13, signalRed, false)
+                else if (rows.length() == 0) text(days, "This plan has no daily readings yet.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val day = rows.getJSONObject(i)
+                    text(days, "DAY " + day.optInt("day_number"), 11, gold, true)
+                    text(days, day.optString("scripture_reference"), 16, white, true)
+                    if (day.optString("reflection").isNotBlank()) text(days, day.optString("reflection"), 13, muted, false)
+                    if (AuthApi.isSignedIn(this)) button(days, "MARK DAY COMPLETE") { markReadingDay(planId, day.optInt("day_number")) }
+                    space(days, 10)
+                }
+            }
+        }
+        button(content, "BACK TO ELIX WORD") { showWord() }
+    }
+
+    private fun markReadingDay(planId: String, dayNumber: Int) {
+        requireMember {
+            val body = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("plan_id", planId).put("day_number", dayNumber)
+            SupabaseApi.postWithError(this, "reading_plan_progress", body) { error ->
+                runOnUiThread { info(if (error == null) "Reading progress saved." else "Could not save progress: $error") }
+            }
+        }
+    }
+
+    private fun showCommunity() {
+        base("Community", "PRAYER, TESTIMONIES & FELLOWSHIP", "Grow together", "Share prayer needs, encourage others and find Christian fellowship.")
+        val actions = card(content)
+        text(actions, "YOUR VOICE MATTERS", 11, gold, true)
+        space(actions, 7)
+        button(actions, "＋  SHARE A PRAYER REQUEST") { composeCommunityPost("prayer") }
+        button(actions, "＋  SHARE A TESTIMONY") { composeCommunityPost("testimony") }
+        space(content, 8)
+        text(content, "PRAYER WALL", 16, white, true)
+        val prayers = card(content)
+        SupabaseApi.getWithError(this, "prayer_requests?select=id,title,body,created_at,profiles(display_name)&visibility=eq.public&status=eq.published&order=created_at.desc&limit=50") { rows, error ->
+            runOnUiThread {
+                prayers.removeAllViews()
+                if (error != null) text(prayers, "Prayer wall is not available yet. Apply the ELIX Community database update.", 13, muted, false)
+                else if (rows.length() == 0) text(prayers, "No public prayer requests yet. You can be the first to share.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val item = rows.getJSONObject(i)
+                    text(prayers, item.optString("title", "Prayer request"), 15, gold, true)
+                    text(prayers, item.optString("body"), 13, muted, false)
+                    val profile = item.optJSONObject("profiles")
+                    text(prayers, "Shared by " + (profile?.optString("display_name")?.takeIf { !it.isNullOrBlank() } ?: "ELIX member"), 10, muted, false)
+                    if (AuthApi.isSignedIn(this)) button(prayers, "I'M PRAYING") { info("Thank you for standing with this person in prayer.") }
+                    space(prayers, 10)
+                }
+            }
+        }
+        space(content, 8)
+        text(content, "TESTIMONIES", 16, white, true)
+        val testimonies = card(content)
+        SupabaseApi.getWithError(this, "testimonies?select=id,title,body,created_at,profiles(display_name)&status=eq.published&order=created_at.desc&limit=40") { rows, error ->
+            runOnUiThread {
+                testimonies.removeAllViews()
+                if (error != null) text(testimonies, "Testimonies are not available yet. Apply the ELIX Community database update.", 13, muted, false)
+                else if (rows.length() == 0) text(testimonies, "Approved testimonies will appear here.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val item = rows.getJSONObject(i)
+                    text(testimonies, item.optString("title"), 15, gold, true)
+                    text(testimonies, item.optString("body"), 13, muted, false)
+                    space(testimonies, 8)
+                }
+            }
+        }
+        space(content, 8)
+        text(content, "FELLOWSHIP GROUPS", 16, white, true)
+        val groups = card(content)
+        SupabaseApi.getWithError(this, "community_groups?select=id,name,description&is_active=eq.true&order=name.asc") { rows, error ->
+            runOnUiThread {
+                groups.removeAllViews()
+                if (error != null) text(groups, "Groups are not available yet. Apply the ELIX Community database update.", 13, muted, false)
+                else if (rows.length() == 0) text(groups, "Fellowship groups will appear here when created.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val group = rows.getJSONObject(i)
+                    text(groups, group.optString("name"), 15, gold, true)
+                    text(groups, group.optString("description"), 12, muted, false)
+                    button(groups, "JOIN GROUP") { joinCommunityGroup(group.optString("id")) }
+                }
+            }
+        }
+    }
+
+    private fun composeCommunityPost(type: String) {
+        requireMember {
+            val titleInput = android.widget.EditText(this).apply { hint = if (type == "prayer") "Prayer request title" else "Testimony title"; setTextColor(white); setHintTextColor(muted) }
+            val bodyInput = android.widget.EditText(this).apply { hint = "Write your message"; minLines = 4; setTextColor(white); setHintTextColor(muted) }
+            val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0); addView(titleInput); addView(bodyInput) }
+            android.app.AlertDialog.Builder(this).setTitle(if (type == "prayer") "Share a prayer request" else "Share your testimony").setView(layout)
+                .setPositiveButton("Submit") { _, _ ->
+                    val title = titleInput.text.toString().trim()
+                    val body = bodyInput.text.toString().trim()
+                    if (title.isBlank() || body.isBlank()) info("Enter a title and message.")
+                    else {
+                        val table = if (type == "prayer") "prayer_requests" else "testimonies"
+                        val data = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("title", title).put("body", body)
+                        if (type == "prayer") data.put("visibility", "public")
+                        SupabaseApi.postWithError(this, table, data) { error ->
+                            runOnUiThread { info(if (error == null) "Submitted. It will appear after review." else "Submission failed: $error"); if (error == null) showCommunity() }
+                        }
+                    }
+                }.setNegativeButton("Cancel", null).show()
+        }
+    }
+
+    private fun joinCommunityGroup(groupId: String) {
+        requireMember {
+            val data = JSONObject().put("group_id", groupId).put("user_id", AuthApi.currentUserId(this))
+            SupabaseApi.postWithError(this, "community_group_members", data) { error ->
+                runOnUiThread { info(if (error == null) "You joined this fellowship group." else "Could not join group: $error") }
+            }
+        }
+    }
+
+    private fun showAcademy() {
+        base("Academy", "BIBLE & MINISTRY TRAINING", "ELIX Academy", "Learn Scripture, discipleship, leadership and practical ministry.")
+        val intro = card(content)
+        text(intro, "LEARN. GROW. SERVE.", 11, gold, true)
+        space(intro, 7)
+        text(intro, "Training for a life of faith and service.", 18, white, true)
+        text(intro, "Explore available courses, study lessons and track your learning progress.", 13, muted, false)
+        space(content, 8)
+        text(content, "AVAILABLE COURSES", 16, white, true)
+        val courses = card(content)
+        SupabaseApi.getWithError(this, "academy_courses?select=id,title,description,instructor,difficulty,duration_label&is_published=eq.true&order=created_at.desc") { rows, error ->
+            runOnUiThread {
+                courses.removeAllViews()
+                if (error != null) text(courses, "Academy catalogue is not available. Apply the ELIX Academy database update.", 13, muted, false)
+                else if (rows.length() == 0) text(courses, "New courses are being prepared for ELIX Academy.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val course = rows.getJSONObject(i)
+                    text(courses, course.optString("title"), 16, gold, true)
+                    text(courses, course.optString("description"), 13, muted, false)
+                    text(courses, course.optString("difficulty", "All levels") + " • " + course.optString("duration_label"), 11, muted, false)
+                    button(courses, "VIEW COURSE") { openAcademyCourse(course.optString("id"), course.optString("title")) }
+                    space(courses, 8)
+                }
+            }
+        }
+        notice(content, "Course certificates will only be issued for courses with a verified completion process.")
+    }
+
+    private fun openAcademyCourse(courseId: String, title: String) {
+        base("Course", "ELIX ACADEMY", title, "Course lessons and learning progress.")
+        val enrollment = card(content)
+        button(enrollment, "ENROL IN THIS COURSE") {
+            requireMember {
+                val data = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("course_id", courseId)
+                SupabaseApi.postWithError(this, "course_enrollments", data) { error ->
+                    runOnUiThread { info(if (error == null) "You are enrolled." else "Could not enrol: $error") }
+                }
+            }
+        }
+        val lessons = card(content)
+        SupabaseApi.getWithError(this, "academy_lessons?select=id,title,content,lesson_number&course_id=eq.$courseId&is_published=eq.true&order=lesson_number.asc") { rows, error ->
+            runOnUiThread {
+                lessons.removeAllViews()
+                if (error != null) text(lessons, "Could not load lessons: $error", 13, signalRed, false)
+                else if (rows.length() == 0) text(lessons, "Lessons for this course are being prepared.", 13, muted, false)
+                else for (i in 0 until rows.length()) {
+                    val lesson = rows.getJSONObject(i)
+                    text(lessons, "LESSON " + lesson.optInt("lesson_number") + "  •  " + lesson.optString("title"), 15, gold, true)
+                    button(lessons, "OPEN LESSON") { openAcademyLesson(courseId, lesson.optString("id"), lesson.optString("title"), lesson.optString("content")) }
+                    space(lessons, 7)
+                }
+            }
+        }
+        button(content, "BACK TO ACADEMY") { showAcademy() }
+    }
+
+    private fun openAcademyLesson(courseId: String, lessonId: String, title: String, lessonContent: String) {
+        base("Lesson", "ELIX ACADEMY", title, "Study at your own pace.")
+        val lesson = card(content)
+        text(lesson, lessonContent, 14, muted, false)
+        button(content, "MARK LESSON COMPLETE") {
+            requireMember {
+                val data = JSONObject().put("user_id", AuthApi.currentUserId(this)).put("lesson_id", lessonId)
+                SupabaseApi.postWithError(this, "lesson_progress", data) { error ->
+                    runOnUiThread { info(if (error == null) "Lesson marked complete." else "Could not save progress: $error") }
+                }
+            }
+        }
+        button(content, "BACK TO COURSE") { openAcademyCourse(courseId, "Course") }
+    }
+
+
         base("Ecosystem", "ELIX ECOSYSTEM", section, description)
         val preview = card(content)
         text(preview, "COMING SOON", 11, gold, true)
