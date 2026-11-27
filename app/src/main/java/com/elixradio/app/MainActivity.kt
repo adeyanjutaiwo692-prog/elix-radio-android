@@ -1507,9 +1507,9 @@ class MainActivity : Activity() {
         val likeView = views.getOrNull(0) as? TextView
         val commentView = views.getOrNull(1) as? TextView
         val shareView = views.getOrNull(2) as? TextView
-        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.like&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) likeView?.text = rows.length().toString() } }
-        SupabaseApi.getWithError(this, "media_comments?select=id&media_id=eq.$mediaId&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) commentView?.text = rows.length().toString() } }
-        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.share&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) shareView?.text = rows.length().toString() } }
+        SupabaseApi.getWithError(this, "media_like_counts?select=like_count&media_id=eq." + mediaId) { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) likeView?.text = if (rows.length() > 0) rows.getJSONObject(0).optString("like_count", "0") else "0" } }
+        SupabaseApi.getWithError(this, "media_comments?select=id&media_id=eq." + mediaId + "&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) commentView?.text = rows.length().toString() } }
+        SupabaseApi.getWithError(this, "media_share_counts?select=share_count&media_id=eq." + mediaId) { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) shareView?.text = if (rows.length() > 0) rows.getJSONObject(0).optString("share_count", "0") else "0" } }
     }
 
     private fun shareCurrentFeedItem() {
