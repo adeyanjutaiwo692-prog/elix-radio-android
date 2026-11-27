@@ -173,143 +173,239 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
-        base("Home", "THE ELIX COMMUNITY", "Find your people.", "Discover ministries, churches, Christian voices and organisations in one place.")
+        base("Home", "ELIX COMMUNITY", "Home", "Follow ministries, creators and Christian content.")
+        content.setPadding(0, dp(8), 0, dp(18))
 
-        val topActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val countLabel = TextView(this).apply { text = "MINISTRY & CREATOR DIRECTORY"; textSize = 11f; letterSpacing = 0.08f; setTextColor(muted); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD) }
-        topActions.addView(countLabel, LinearLayout.LayoutParams(0, dp(42), 1f))
-        if (AuthApi.isSignedIn(this)) {
-            val create = TextView(this).apply {
-                text = "＋ Create page"; textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
-                setPadding(dp(14), dp(10), dp(14), dp(10))
-                background = GradientDrawable().apply { setColor(Color.rgb(0,149,246)); cornerRadius = dp(22).toFloat() }
-                setOnClickListener { createPageDialog() }
-            }
-            topActions.addView(create)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(12))
         }
-        content.addView(topActions, fullWidth())
-
-        val search = android.widget.EditText(this).apply {
-            hint = "Search ministries, churches, preachers…"
-            textSize = 14f; setSingleLine(true); setTextColor(white); setHintTextColor(muted)
-            setPadding(dp(16), 0, dp(16), 0)
-            background = GradientDrawable().apply { setColor(panel); cornerRadius = dp(15).toFloat(); setStroke(dp(1), Color.rgb(225,225,225)) }
-            compoundDrawablePadding = dp(8)
+        val logo = TextView(this).apply {
+            text = "ELIX"
+            textSize = 27f
+            letterSpacing = -0.06f
+            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
+            setTextColor(Color.rgb(20, 20, 20))
         }
-        val searchParams = fullWidth().apply { height = dp(52); topMargin = dp(10); bottomMargin = dp(12) }
-        content.addView(search, searchParams)
-
-        val filters = listOf("All", "Ministries", "Churches", "Organisations", "Preachers", "Authors", "Artists")
-        var selectedFilter = "All"
-        val chipScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipToPadding = false }
-        val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        chipScroll.addView(chipRow)
-        content.addView(chipScroll, fullWidth())
-
-        text(content, "DISCOVER CHRISTIAN COMMUNITIES", 15, white, true)
-        space(content, 5)
-        text(content, "Follow a page to keep its messages, videos and programmes close.", 12, muted, false)
-        space(content, 12)
-        val resultsTitle = TextView(this).apply { text = "ALL PAGES"; textSize = 11f; letterSpacing = 0.08f; setTextColor(gold); typeface = Typeface.DEFAULT_BOLD }
-        content.addView(resultsTitle, fullWidth())
-        space(content, 8)
-        val directory = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(directory, fullWidth())
-        val allPages = mutableListOf<JSONObject>()
-
-        fun matchesType(page: JSONObject, filter: String): Boolean {
-            val type = page.optString("page_type").lowercase()
-            return when (filter) {
-                "Ministries" -> type == "ministry"
-                "Churches" -> type == "church"
-                "Organisations" -> type == "organisation"
-                "Preachers" -> type == "public_figure"
-                "Authors" -> type == "author"
-                "Artists" -> type == "artist"
-                else -> true
-            }
+        header.addView(logo, LinearLayout.LayoutParams(0, -2, 1f))
+        val createPost = TextView(this).apply {
+            text = "＋"
+            textSize = 30f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+            setOnClickListener { if (AuthApi.isSignedIn(this@MainActivity)) showAccount() else showAuthDialog(false) }
         }
-        fun renderDirectory() {
-            directory.removeAllViews()
-            val term = search.text.toString().trim().lowercase()
-            val filtered = allPages.filter { p ->
-                matchesType(p, selectedFilter) &&
-                    (term.isBlank() || listOf(p.optString("name"), p.optString("description"), p.optString("city"), p.optString("page_type")).any { it.lowercase().contains(term) })
+        header.addView(createPost, LinearLayout.LayoutParams(dp(42), dp(42)))
+        val messages = TextView(this).apply {
+            text = "♡"
+            textSize = 27f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+        }
+        header.addView(messages, LinearLayout.LayoutParams(dp(42), dp(42)))
+        content.addView(header, fullWidth())
+
+        val storyScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(dp(12), dp(2), dp(12), dp(10))
+        }
+        val stories = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        storyScroll.addView(stories)
+        content.addView(storyScroll, fullWidth())
+
+        fun addStory(name: String, imageUrl: String, isOwn: Boolean = false) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(5), dp(3), dp(5), dp(3))
+                setOnClickListener { if (isOwn) { if (AuthApi.isSignedIn(this@MainActivity)) showAccount() else showAuthDialog(false) } }
             }
-            resultsTitle.text = if (selectedFilter == "All") "ALL PAGES · ${filtered.size}" else "${selectedFilter.uppercase()} · ${filtered.size}"
-            if (filtered.isEmpty()) {
-                val empty = card(directory)
-                text(empty, if (allPages.isEmpty()) "No pages have joined ELIX yet." else "No pages match your search.", 15, white, true)
-                text(empty, "Try another name or category, or create a page for your ministry.", 12, muted, false)
-                if (AuthApi.isSignedIn(this)) button(empty, "＋ CREATE A PAGE") { createPageDialog() }
-                return
-            }
-            filtered.forEachIndexed { index, p ->
-                val pageId = p.optString("id")
-                val name = p.optString("name").ifBlank { "ELIX Page" }
-                val type = p.optString("page_type").replace("_", " ").replaceFirstChar { it.uppercase() }
-                val city = p.optString("city").ifBlank { "Online" }
-                val item = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(13), dp(13), dp(13), dp(13))
-                    background = GradientDrawable().apply { setColor(panel); cornerRadius = dp(17).toFloat(); setStroke(dp(1), Color.rgb(232,232,232)) }
-                    isClickable = true; isFocusable = true
-                    setOnClickListener { showCreatorPage(pageId) }
+            val ring = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.WHITE)
+                    setStroke(dp(2), if (isOwn) Color.rgb(205,205,205) else Color.rgb(220,35,105))
                 }
-                val avatarFrame = FrameLayout(this)
-                val fallback = TextView(this).apply {
-                    text = name.trim().take(1).uppercase(); textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-                    typeface = Typeface.DEFAULT_BOLD
-                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)) }
-                }
-                avatarFrame.addView(fallback, FrameLayout.LayoutParams(-1,-1))
-                val avatar = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = GradientDrawable().apply { shape = GradientDrawable.OVAL } }
-                avatarFrame.addView(avatar, FrameLayout.LayoutParams(-1,-1))
-                if (p.optString("logo_url").isNotBlank()) loadRemoteImage(p.optString("logo_url"), avatar)
-                item.addView(avatarFrame, LinearLayout.LayoutParams(dp(58),dp(58)))
-                val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12),0,dp(8),0) }
-                val title = TextView(this).apply { text = name; textSize = 15f; setTextColor(white); typeface = Typeface.create("sans-serif-medium",Typeface.BOLD); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-                val subtitle = TextView(this).apply { text = type + "  ·  " + city; textSize = 11f; setTextColor(gold); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-                val description = TextView(this).apply { text = p.optString("description").ifBlank { "Explore messages, videos and updates." }; textSize = 12f; setTextColor(muted); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
-                details.addView(title); details.addView(subtitle); details.addView(description)
-                item.addView(details, LinearLayout.LayoutParams(0,-2,1f))
-                val arrow = TextView(this).apply { text = "›"; textSize = 30f; setTextColor(muted); gravity = Gravity.CENTER }
-                item.addView(arrow, LinearLayout.LayoutParams(dp(22),dp(48)))
-                val params = fullWidth().apply { bottomMargin = dp(9) }
-                directory.addView(item,params)
+                setPadding(dp(3), dp(3), dp(3), dp(3))
             }
-        }
-        fun renderChips() {
-            chipRow.removeAllViews()
-            filters.forEach { filter ->
-                val active = filter == selectedFilter
-                val chip = TextView(this).apply {
-                    text = filter; textSize = 12f; gravity = Gravity.CENTER
-                    setPadding(dp(15),dp(9),dp(15),dp(9))
-                    setTextColor(if (active) Color.WHITE else muted)
-                    background = GradientDrawable().apply { setColor(if (active) Color.rgb(0,149,246) else panel); cornerRadius = dp(22).toFloat(); if (!active) setStroke(dp(1),Color.rgb(225,225,225)) }
-                    setOnClickListener { selectedFilter = filter; renderChips(); renderDirectory() }
-                }
-                val params = LinearLayout.LayoutParams(-2,dp(38)).apply { marginEnd = dp(8) }
-                chipRow.addView(chip,params)
+            val avatar = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(230,230,230)) }
             }
+            ring.addView(avatar, FrameLayout.LayoutParams(-1, -1))
+            if (imageUrl.isNotBlank()) loadRemoteImage(imageUrl, avatar)
+            if (isOwn) {
+                val plus = TextView(this).apply {
+                    text = "+"
+                    textSize = 17f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)); setStroke(dp(2), Color.WHITE) }
+                }
+                val p = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.BOTTOM or Gravity.RIGHT)
+                ring.addView(plus, p)
+            }
+            item.addView(ring, LinearLayout.LayoutParams(dp(66), dp(66)))
+            val label = TextView(this).apply {
+                text = name
+                textSize = 10.5f
+                setTextColor(white)
+                gravity = Gravity.CENTER
+                maxWidth = dp(76)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(4), 0, 0)
+            }
+            item.addView(label)
+            stories.addView(item, LinearLayout.LayoutParams(dp(76), -2))
         }
-        renderChips()
-        search.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderDirectory() }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        })
-        text(directory, "Loading pages…", 13, muted, false)
-        SupabaseApi.getWithError(this, "ministries?select=id,name,city,page_type,description,owner_id,logo_url&or=(approved.eq.true,owner_id.eq.${AuthApi.currentUserId(this)})&order=name.asc&limit=300") { rows, error ->
+        addStory("Your story", "", true)
+        SupabaseApi.getWithError(this, "ministries?select=id,name,logo_url&order=name.asc&limit=30") { pages, error ->
             runOnUiThread {
+                if (error == null) for (i in 0 until pages.length()) {
+                    val p = pages.getJSONObject(i)
+                    addStory(p.optString("name", "Ministry"), p.optString("logo_url"))
+                }
+            }
+        }
+
+        val divider = View(this).apply { setBackgroundColor(Color.rgb(235,235,235)) }
+        content.addView(divider, LinearLayout.LayoutParams(-1, dp(1)))
+        val feedHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(10))
+        }
+        val feedTitle = TextView(this).apply {
+            text = "For you"
+            textSize = 17f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(white)
+        }
+        feedHeader.addView(feedTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        val following = TextView(this).apply {
+            text = "Following"
+            textSize = 14f
+            setTextColor(muted)
+        }
+        feedHeader.addView(following)
+        content.addView(feedHeader, fullWidth())
+
+        val feed = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(feed, fullWidth())
+        SupabaseApi.getWithError(this, "media_items?select=id,title,kind,media_type,file_path,ministry_id,uploaded_by,ministries(name,logo_url)&status=eq.approved&order=created_at.desc&limit=40") { rows, error ->
+            runOnUiThread {
+                feed.removeAllViews()
                 if (error != null) {
-                    directory.removeAllViews()
-                    text(directory, "The directory could not load: $error", 12, signalRed, false)
-                } else {
-                    allPages.clear()
-                    for (i in 0 until rows.length()) allPages.add(rows.getJSONObject(i))
-                    renderDirectory()
+                    text(feed, "Your feed could not be loaded. " + error, 13, muted, false)
+                    return@runOnUiThread
+                }
+                if (rows.length() == 0) {
+                    text(feed, "No posts yet. Follow ministries and creators as they publish sermons, worship and updates.", 14, muted, false)
+                    return@runOnUiThread
+                }
+                homeFeedItems.clear()
+                for (i in 0 until rows.length()) homeFeedItems.add(rows.getJSONObject(i))
+                for (i in 0 until rows.length()) {
+                    val post = rows.getJSONObject(i)
+                    val page = post.optJSONObject("ministries")
+                    val creator = page?.optString("name").orEmpty().ifBlank { "ELIX creator" }
+                    val card = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setBackgroundColor(Color.WHITE)
+                    }
+                    val identity = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(14), dp(10), dp(14), dp(10))
+                    }
+                    val avatar = ImageView(this@MainActivity).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.LTGRAY) }
+                    }
+                    identity.addView(avatar, LinearLayout.LayoutParams(dp(38), dp(38)))
+                    if (page?.optString("logo_url").orEmpty().isNotBlank()) loadRemoteImage(page!!.optString("logo_url"), avatar)
+                    val identityText = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(10), 0, 0, 0)
+                    }
+                    text(identityText, creator, 14, white, true)
+                    text(identityText, post.optString("kind").replace("_", " ").uppercase() + " · ELIX", 10, muted, false)
+                    identity.addView(identityText, LinearLayout.LayoutParams(0, -2, 1f))
+                    val more = TextView(this@MainActivity).apply { text = "•••"; textSize = 18f; setTextColor(white) }
+                    identity.addView(more)
+                    card.addView(identity, fullWidth())
+
+                    val media = FrameLayout(this@MainActivity).apply { setBackgroundColor(Color.rgb(18,18,18)) }
+                    val mediaType = post.optString("media_type", "video")
+                    val filePath = post.optString("file_path")
+                    if (mediaType == "image" && filePath.isNotBlank()) {
+                        val imageView = ImageView(this@MainActivity).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                        media.addView(imageView, FrameLayout.LayoutParams(-1, dp(340)))
+                        val mediaUrl = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(filePath, "/")
+                        Thread {
+                            try {
+                                val bitmap = URL(mediaUrl).openStream().use { BitmapFactory.decodeStream(it) }
+                                runOnUiThread { if (bitmap != null && imageView.parent != null) imageView.setImageBitmap(bitmap) }
+                            } catch (_: Exception) { }
+                        }.start()
+                    } else {
+                        val play = TextView(this@MainActivity).apply {
+                            text = if (mediaType == "audio") "♫" else "▶"
+                            textSize = 54f
+                            gravity = Gravity.CENTER
+                            setTextColor(Color.WHITE)
+                            setOnClickListener { openMedia(filePath, mediaType) }
+                        }
+                        media.addView(play, FrameLayout.LayoutParams(-1, dp(300)))
+                    }
+                    card.addView(media, fullWidth())
+
+                    val actions = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(14), dp(8), dp(14), dp(4))
+                    }
+                    fun action(label: String, click: () -> Unit): TextView {
+                        return TextView(this@MainActivity).apply {
+                            text = label
+                            textSize = 24f
+                            setTextColor(white)
+                            setPadding(0, 0, dp(18), 0)
+                            setOnClickListener { click() }
+                        }
+                    }
+                    actions.addView(action("♡") {
+                        if (!AuthApi.isSignedIn(this@MainActivity)) showAuthDialog(false)
+                        else FeedEngagementApi.record(this@MainActivity, post.optString("id"), "like")
+                    })
+                    actions.addView(action("▢") {
+                        homeFeedIndex = homeFeedItems.indexOfFirst { it.optString("id") == post.optString("id") }.coerceAtLeast(0)
+                        openCommentsForCurrentItem()
+                    })
+                    actions.addView(action("↗") {
+                        homeFeedIndex = homeFeedItems.indexOfFirst { it.optString("id") == post.optString("id") }.coerceAtLeast(0)
+                        shareCurrentFeedItem()
+                    })
+                    val follow = TextView(this@MainActivity).apply {
+                        text = "＋ Follow"
+                        textSize = 13f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(Color.rgb(0,149,246))
+                        setOnClickListener {
+                            homeFeedIndex = homeFeedItems.indexOfFirst { it.optString("id") == post.optString("id") }.coerceAtLeast(0)
+                            followCurrentCreator()
+                        }
+                    }
+                    actions.addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+                    actions.addView(follow)
+                    card.addView(actions, fullWidth())
+                    text(card, post.optString("title", "ELIX post"), 14, white, true)
+                    card.setPadding(0, 0, 0, dp(12))
+                    val margin = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
+                    feed.addView(card, margin)
                 }
             }
         }
@@ -1048,53 +1144,146 @@ class MainActivity : Activity() {
     private fun openCommentsForCurrentItem() {
         val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
         val mediaId = item.optString("id")
-        val panelView = LinearLayout(this).apply {
+        val dialog = android.app.Dialog(this)
+        val sheet = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(8))
-            setBackgroundColor(panel)
+            setBackground(GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadii = floatArrayOf(dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(), 0f, 0f, 0f, 0f)
+            })
+            setPadding(dp(16), dp(8), dp(16), dp(10))
         }
-        val commentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply { addView(commentList) }
-        panelView.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        val input = android.widget.EditText(this).apply { hint = "Add a comment…"; setTextColor(white); setHintTextColor(muted) }
-        val send = Button(this).apply { text = "POST COMMENT"; isAllCaps = false }
-        val composer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(input); addView(send) }
-        panelView.addView(composer, LinearLayout.LayoutParams(-1, -2))
-        val dialog = android.app.AlertDialog.Builder(this).setTitle("Comments · " + item.optString("title"))
-            .setView(panelView).setPositiveButton("CLOSE", null).create()
-        fun loadComments() {
-            commentList.removeAllViews()
-            text(commentList, "Loading comments…", 13, muted, false)
-            SupabaseApi.getWithError(this, "media_comments?select=id,comment_text,author_name,created_at&media_id=eq.$mediaId&order=created_at.asc&limit=200") { rows, error ->
-                runOnUiThread {
-                    commentList.removeAllViews()
-                    if (error != null) text(commentList, "Comments could not be loaded: $error", 12, signalRed, false)
-                    else if (rows.length() == 0) text(commentList, "No comments yet. Start the conversation.", 13, muted, false)
-                    else for (i in 0 until rows.length()) {
-                        val c = rows.getJSONObject(i)
-                        text(commentList, c.optString("author_name").ifBlank { "ELIX member" }, 12, gold, true)
-                        text(commentList, c.optString("comment_text"), 14, white, false)
-                        space(commentList, 8)
+        val handle = View(this).apply {
+            background = GradientDrawable().apply { setColor(Color.rgb(205,205,205)); cornerRadius = dp(4).toFloat() }
+        }
+        val handleWrap = FrameLayout(this).apply { addView(handle, FrameLayout.LayoutParams(dp(38), dp(4), Gravity.CENTER)) }
+        sheet.addView(handleWrap, LinearLayout.LayoutParams(-1, dp(22)))
+        val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        val headingText = TextView(this).apply {
+            text = "Comments"
+            textSize = 15f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(Color.rgb(20,20,20))
+        }
+        heading.addView(headingText)
+        sheet.addView(heading, LinearLayout.LayoutParams(-1, dp(38)))
+        val divider = View(this).apply { setBackgroundColor(Color.rgb(238,238,238)) }
+        sheet.addView(divider, LinearLayout.LayoutParams(-1, dp(1)))
+
+        val commentScroll = ScrollView(this).apply { isFillViewport = false }
+        val commentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(12), 0, dp(12)) }
+        commentScroll.addView(commentList)
+        sheet.addView(commentScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val composer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, dp(4))
+        }
+        val avatar = TextView(this).apply {
+            text = AuthApi.currentName(this@MainActivity).take(1).uppercase().ifBlank { "E" }
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)) }
+        }
+        composer.addView(avatar, LinearLayout.LayoutParams(dp(36), dp(36)))
+        val input = android.widget.EditText(this).apply {
+            hint = "Add a comment…"
+            textSize = 14f
+            setTextColor(Color.rgb(25,25,25))
+            setHintTextColor(Color.rgb(145,145,145))
+            setSingleLine(true)
+            background = GradientDrawable().apply { setColor(Color.rgb(246,246,246)); cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.rgb(235,235,235)) }
+            setPadding(dp(14), 0, dp(14), 0)
+        }
+        val inputParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(10); marginEnd = dp(8) }
+        composer.addView(input, inputParams)
+        val send = TextView(this).apply {
+            text = "Post"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(0,149,246))
+            gravity = Gravity.CENTER
+            setOnClickListener {
+                if (!AuthApi.isSignedIn(this@MainActivity)) { info("Sign in to comment."); return@setOnClickListener }
+                val value = input.text.toString().trim()
+                if (value.isBlank()) { input.error = "Write a comment first"; return@setOnClickListener }
+                isEnabled = false
+                val body = JSONObject()
+                    .put("media_id", mediaId)
+                    .put("user_id", AuthApi.currentUserId(this@MainActivity))
+                    .put("author_name", AuthApi.currentName(this@MainActivity).ifBlank { "ELIX member" })
+                    .put("comment_text", value)
+                SupabaseApi.postWithError(this@MainActivity, "media_comments", body) { error ->
+                    runOnUiThread {
+                        isEnabled = true
+                        if (error == null) { input.setText(""); loadComments() }
+                        else info("Comment could not be posted: " + error)
                     }
                 }
             }
         }
-        send.setOnClickListener {
-            if (!AuthApi.isSignedIn(this)) { info("Sign in to comment."); return@setOnClickListener }
-            val value = input.text.toString().trim()
-            if (value.isBlank()) { input.error = "Write a comment first"; return@setOnClickListener }
-            send.isEnabled = false
-            val body = JSONObject().put("media_id", mediaId).put("user_id", AuthApi.currentUserId(this)).put("author_name", AuthApi.currentName(this).ifBlank { "ELIX member" }).put("comment_text", value)
-            SupabaseApi.postWithError(this, "media_comments", body) { e ->
+        composer.addView(send, LinearLayout.LayoutParams(dp(48), dp(44)))
+        sheet.addView(composer, LinearLayout.LayoutParams(-1, -2))
+        dialog.setContentView(sheet)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(-1, (resources.displayMetrics.heightPixels * 0.78f).toInt())
+            setGravity(Gravity.BOTTOM)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.42f }
+        }
+
+        fun loadComments() {
+            commentList.removeAllViews()
+            val loading = TextView(this).apply { text = "Loading comments…"; textSize = 13f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(30), 0, dp(30)) }
+            commentList.addView(loading)
+            SupabaseApi.getWithError(this, "media_comments?select=id,comment_text,author_name,created_at&media_id=eq." + mediaId + "&order=created_at.asc&limit=200") { rows, error ->
                 runOnUiThread {
-                    send.isEnabled = true
-                    if (e == null) { input.setText(""); loadComments() } else info("Comment could not be posted: $e")
+                    commentList.removeAllViews()
+                    if (error != null) {
+                        val failed = TextView(this).apply { text = "Comments couldn't load. Please try again."; textSize = 13f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(28), 0, dp(28)) }
+                        commentList.addView(failed)
+                    } else if (rows.length() == 0) {
+                        val empty = TextView(this).apply { text = "No comments yet\nBe the first to share your thoughts."; textSize = 14f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(44), 0, dp(44)) }
+                        commentList.addView(empty)
+                    } else for (i in 0 until rows.length()) {
+                        val row = rows.getJSONObject(i)
+                        val commentRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP; setPadding(0, dp(9), 0, dp(9)) }
+                        val userAvatar = TextView(this).apply {
+                            text = row.optString("author_name").take(1).uppercase().ifBlank { "E" }
+                            textSize = 12f
+                            gravity = Gravity.CENTER
+                            setTextColor(Color.WHITE)
+                            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(115,125,145)) }
+                        }
+                        commentRow.addView(userAvatar, LinearLayout.LayoutParams(dp(34), dp(34)))
+                        val bodyColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), 0, dp(6), 0) }
+                        val author = TextView(this).apply {
+                            text = row.optString("author_name").ifBlank { "ELIX member" }
+                            textSize = 12f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(Color.rgb(30,30,30))
+                        }
+                        val message = TextView(this).apply { text = row.optString("comment_text"); textSize = 13f; setTextColor(Color.rgb(55,55,55)); setPadding(0, dp(3), 0, dp(2)) }
+                        bodyColumn.addView(author)
+                        bodyColumn.addView(message)
+                        commentRow.addView(bodyColumn, LinearLayout.LayoutParams(0, -2, 1f))
+                        val like = TextView(this).apply { text = "♡"; textSize = 18f; setTextColor(Color.GRAY) }
+                        commentRow.addView(like)
+                        commentList.addView(commentRow, fullWidth())
+                    }
                 }
             }
         }
         loadComments()
         dialog.show()
-        dialog.window?.setLayout(-1, (resources.displayMetrics.heightPixels * 0.72f).toInt())
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(-1, (resources.displayMetrics.heightPixels * 0.78f).toInt())
+            setGravity(Gravity.BOTTOM)
+        }
     }
 
     private fun followCurrentCreator() {
