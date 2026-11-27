@@ -1072,30 +1072,64 @@ class MainActivity : Activity() {
         val actionRail = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(5), dp(8), dp(5), dp(8))
-            background = GradientDrawable().apply { setColor(0x55000000); cornerRadius = dp(18).toFloat() }
+            setPadding(dp(2), dp(5), dp(2), dp(5))
+            background = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
         }
         fun railAction(symbol: String, label: String, action: () -> Unit): TextView {
-            val item = TextView(this).apply {
-                text = "$symbol\n$label"
+            val wrap = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                textSize = 11f
-                setTextColor(white)
-                setTypeface(null, Typeface.BOLD)
-                setPadding(dp(5), dp(8), dp(5), dp(8))
+                setPadding(0, dp(5), 0, dp(5))
+            }
+            val icon = TextView(this).apply {
+                text = symbol
+                gravity = Gravity.CENTER
+                textSize = 31f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+                setShadowLayer(dp(3).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
                 setOnClickListener { action() }
             }
-            actionRail.addView(item, LinearLayout.LayoutParams(dp(62), dp(58)))
-            return item
+            wrap.addView(icon, LinearLayout.LayoutParams(dp(54), dp(42)))
+            val count = TextView(this).apply {
+                text = label
+                gravity = Gravity.CENTER
+                textSize = 11f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setShadowLayer(dp(3).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
+                setOnClickListener { action() }
+            }
+            wrap.addView(count, LinearLayout.LayoutParams(dp(58), dp(20)))
+            actionRail.addView(wrap, LinearLayout.LayoutParams(dp(60), -2))
+            return TextView(this).apply { tag = listOf(icon, count) }
         }
-        railAction("＋", "FOLLOW") { followCurrentCreator() }
-        val likeAction = railAction("♡", "0") { val item = homeFeedItems.getOrNull(homeFeedIndex); if (item != null) { FeedEngagementApi.record(this@MainActivity, item.optString("id"), "like"); info("Liked"); refreshFeedActionCounts(item) } }
+        val followAction = railAction("＋", "Follow") { followCurrentCreator() }
+        val likeAction = railAction("♡", "0") {
+            val item = homeFeedItems.getOrNull(homeFeedIndex)
+            if (item != null) {
+                if (!AuthApi.isSignedIn(this@MainActivity)) { showAuthDialog(false); return@railAction }
+                val mediaId = item.optString("id")
+                val userId = AuthApi.currentUserId(this@MainActivity)
+                SupabaseApi.getWithError(this@MainActivity, "media_engagement_events?select=id&media_id=eq." + mediaId + "&user_id=eq." + userId + "&event_type=eq.like&limit=1") { rows, error ->
+                    if (error != null) runOnUiThread { info("Like service unavailable: " + error) }
+                    else if (rows.length() > 0) {
+                        val eventId = rows.getJSONObject(0).optString("id")
+                        SupabaseApi.deleteWithError(this@MainActivity, "media_engagement_events?id=eq." + eventId) { e ->
+                            runOnUiThread { if (e != null) info("Could not remove like: " + e); refreshFeedActionCounts(item) }
+                        }
+                    } else {
+                        FeedEngagementApi.record(this@MainActivity, mediaId, "like")
+                        runOnUiThread { refreshFeedActionCounts(item) }
+                    }
+                }
+            }
+        }
         val commentAction = railAction("▢", "0") { openCommentsForCurrentItem() }
-        val shareAction = railAction("↗", "0") { shareCurrentFeedItem() }
-        railAction("★", "SUBSCRIBE") { subscribeCurrentCreator() }
+        val shareAction = railAction("↗", "Share") { shareCurrentFeedItem() }
         homeFeedFrame?.tag = listOf(likeAction, commentAction, shareAction)
-        val railParams = FrameLayout.LayoutParams(dp(70), -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL)
-        railParams.rightMargin = dp(8)
+        val railParams = FrameLayout.LayoutParams(dp(64), -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL)
+        railParams.rightMargin = dp(5)
         frame.addView(actionRail, railParams)
         val feedback = Button(this).apply { text = "⋯  NOT INTERESTED"; isAllCaps = false; setOnClickListener {
             val item = homeFeedItems.getOrNull(homeFeedIndex)
@@ -1217,7 +1251,7 @@ class MainActivity : Activity() {
                     .put("comment_text", value)
                 SupabaseApi.postWithError(this@MainActivity, "media_comments", body) { error ->
                     runOnUiThread {
-                        isEnabled = true
+                        send.isEnabled = true
                         if (error == null) { input.setText(""); loadComments() }
                         else info("Comment could not be posted: " + error)
                     }
