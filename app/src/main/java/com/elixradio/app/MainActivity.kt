@@ -267,15 +267,14 @@ class MainActivity : Activity() {
             stories.addView(item, LinearLayout.LayoutParams(dp(76), -2))
         }
         addStory("Your story", "", true)
-        SupabaseApi.getWithError(this, "media_stories?select=id,expires_at,media_items(id,title,media_type,file_path)&expires_at=gt.now()&order=created_at.desc&limit=30") { storyRows, storyError ->
+        SupabaseApi.getWithError(this, "media_stories?select=id,title,media_type,file_path,expires_at&expires_at=gt.now()&order=created_at.desc&limit=30") { storyRows, storyError ->
             runOnUiThread {
                 if (storyError == null) for (i in 0 until storyRows.length()) {
                     val story = storyRows.getJSONObject(i)
-                    val media = story.optJSONObject("media_items") ?: continue
-                    val path = media.optString("file_path")
-                    val type = media.optString("media_type")
+                    val path = story.optString("file_path")
+                    val type = story.optString("media_type")
                     val thumb = if (type == "image") BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/") else ""
-                    addStory(media.optString("title", "ELIX story"), thumb) { openStoryViewer(media) }
+                    addStory(story.optString("title", "ELIX story"), thumb) { openStoryViewer(story) }
                 }
             }
         }
@@ -1359,22 +1358,19 @@ class MainActivity : Activity() {
                 runOnUiThread { info("Story upload failed: " + uploaded.message) }
                 return@upload
             }
-            SupabaseApi.getWithError(this, "media_items?select=id&file_path=eq." + Uri.encode(uploaded.filePath) + "&uploaded_by=eq." + AuthApi.currentUserId(this) + "&limit=1") { rows, error ->
-                if (error != null || rows.length() == 0) {
-                    runOnUiThread { info("Your file uploaded, but ELIX could not attach it to a story. " + (error ?: "")) }
-                    return@getWithError
-                }
-                val mediaId = rows.getJSONObject(0).optString("id")
-                val expiryFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
-                    timeZone = java.util.TimeZone.getTimeZone("UTC")
-                }
-                val body = JSONObject().put("media_id", mediaId).put("created_by", AuthApi.currentUserId(this))
-                    .put("expires_at", expiryFormat.format(java.util.Date(System.currentTimeMillis() + 24L * 60L * 60L * 1000L)))
-                SupabaseApi.postWithError(this, "media_stories", body) { saveError ->
-                    runOnUiThread {
-                        if (saveError == null) { info("Your story is live for 24 hours."); showHome() }
-                        else info("Media uploaded, but story publishing failed: $saveError")
-                    }
+            val expiryFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            val body = JSONObject()
+                .put("file_path", uploaded.filePath)
+                .put("media_type", type)
+                .put("title", title)
+                .put("created_by", AuthApi.currentUserId(this))
+                .put("expires_at", expiryFormat.format(java.util.Date(System.currentTimeMillis() + 24L * 60L * 60L * 1000L)))
+            SupabaseApi.postWithError(this, "media_stories", body) { saveError ->
+                runOnUiThread {
+                    if (saveError == null) { info("Your story is live for 24 hours."); showHome() }
+                    else info("Media uploaded, but story publishing failed: $saveError")
                 }
             }
         }
