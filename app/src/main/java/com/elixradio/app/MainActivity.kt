@@ -1189,6 +1189,7 @@ class MainActivity : Activity() {
     private fun openCommentsForCurrentItem() {
         val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
         val mediaId = item.optString("id")
+        var reloadComments: (() -> Unit)? = null
         val dialog = android.app.Dialog(this)
         val sheet = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1213,7 +1214,7 @@ class MainActivity : Activity() {
                     menu.add("Recent"); menu.add("Oldest")
                     setOnMenuItemClickListener { selected ->
                         sortCommentsOldest = selected.title.toString() == "Oldest"
-                        loadComments()
+                        reloadComments?.invoke()
                         true
                     }
                 }.show()
@@ -1253,7 +1254,7 @@ class MainActivity : Activity() {
             SupabaseApi.postWithError(this@MainActivity, "media_comments", body) { error ->
                 runOnUiThread {
                     post.isEnabled = true
-                    if (error == null) { input.setText(""); loadComments(); refreshFeedActionCounts(item) }
+                    if (error == null) { input.setText(""); reloadComments?.invoke(); refreshFeedActionCounts(item) }
                     else info("Comment could not be posted: $error")
                 }
             }
@@ -1261,7 +1262,7 @@ class MainActivity : Activity() {
         composer.addView(post, LinearLayout.LayoutParams(dp(48), dp(42)))
         sheet.addView(composer, LinearLayout.LayoutParams(-1, -2))
 
-        fun loadComments() {
+        reloadComments = {
             list.removeAllViews()
             val loading = TextView(this).apply { text = "Loading comments…"; textSize = 13f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(36), 0, dp(36)) }
             list.addView(loading)
@@ -1310,7 +1311,7 @@ class MainActivity : Activity() {
             addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             attributes = attributes.apply { dimAmount = 0.45f }
         }
-        loadComments()
+        reloadComments?.invoke()
     }
 
     private fun followCurrentCreator() {
