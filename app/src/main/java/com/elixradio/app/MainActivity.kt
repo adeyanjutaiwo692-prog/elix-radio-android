@@ -122,8 +122,8 @@ class MainActivity : Activity() {
 
     private fun setNav(active: String) {
         nav.removeAllViews()
-        listOf("Home", "Discover", "Explore", "Account").forEach { label ->
-            val symbol = when(label) { "Home" -> "⌂"; "Discover" -> "▶"; "Explore" -> "◎"; else -> "◉" }
+        listOf("Home", "Discover", "Ecosystem", "Account").forEach { label ->
+            val symbol = when(label) { "Home" -> "⌂"; "Discover" -> "▶"; "Ecosystem" -> "✦"; else -> "◉" }
             val b = TextView(this).apply {
                 text = "$symbol\n$label"
                 textSize = 11f
@@ -135,7 +135,7 @@ class MainActivity : Activity() {
                     when (label) {
                         "Home" -> showHome()
                         "Discover" -> showDiscover()
-                        "Explore" -> showExploreHub()
+                        "Ecosystem" -> showExploreHub()
                         "Account" -> showAccount()
                     }
                 }
@@ -316,13 +316,134 @@ class MainActivity : Activity() {
     }
 
     private fun showExploreHub() {
-        base("Explore", "Explore ELIX", "DISCOVER", "Find ministries, books, eBooks, libraries, radio and live broadcasts.")
-        tile(content, "MINISTRIES & PUBLIC FIGURES", "Explore ministry and creator pages.") { showHome() }
-        tile(content, "LIBRARY & EBOOKS", "Browse Christian books and digital resources.") { showLibrary() }
-        tile(content, "RADIO", "Listen to ELIX Radio and audio programmes.") { showRadio() }
-        tile(content, "LIVE RADIO", "Listen to live audio broadcasts.") { showLiveRadio() }
-        tile(content, "LIVE VIDEO", "Watch live ministry broadcasts.") { showLive() }
-        tile(content, "UPCOMING PROGRAMMES", "Conferences, services and events.") { showUpcoming() }
+        base("Ecosystem", "ONE HOME FOR CHRISTIAN LIFE", "The ELIX ecosystem", "Watch, listen, learn, connect and grow — all in one place.")
+
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(22), dp(20), dp(22))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(7, 18, 43), Color.rgb(0, 91, 155), Color.rgb(14, 39, 75))).apply {
+                cornerRadius = dp(22).toFloat()
+            }
+        }
+        text(hero, "FAITH. TRUTH. INSPIRATION.", 10, Color.rgb(150, 213, 255), true)
+        space(hero, 8)
+        text(hero, "Your Christian digital home.", 24, Color.WHITE, true)
+        space(hero, 5)
+        text(hero, "A connected place for ministries, Christian media, spiritual growth and fellowship.", 13, Color.rgb(225, 235, 248), false)
+        space(hero, 14)
+        val exploreButton = TextView(this).apply {
+            text = "▶  EXPLORE ELIX"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(11), dp(16), dp(11))
+            background = GradientDrawable().apply { setColor(Color.rgb(0, 149, 246)); cornerRadius = dp(24).toFloat() }
+            setOnClickListener { showDiscover() }
+        }
+        hero.addView(exploreButton, LinearLayout.LayoutParams(-2, dp(42)))
+        content.addView(hero, fullWidth())
+        space(content, 22)
+
+        text(content, "EXPLORE THE ELIX NETWORK", 11, gold, true)
+        space(content, 5)
+        text(content, "Eight connected experiences. One platform.", 19, white, true)
+        text(content, "Choose where you want to go.", 13, muted, false)
+        space(content, 14)
+
+        fun feature(row: LinearLayout, symbol: String, title: String, detail: String, status: String, colors: IntArray, action: () -> Unit) {
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.TOP
+                setPadding(dp(13), dp(14), dp(13), dp(13))
+                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
+                    cornerRadius = dp(18).toFloat()
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { action() }
+            }
+            val icon = TextView(this).apply {
+                text = symbol
+                textSize = 27f
+                setTextColor(Color.WHITE)
+            }
+            tile.addView(icon, LinearLayout.LayoutParams(-1, dp(38)))
+            space(tile, 6)
+            text(tile, title, 16, Color.WHITE, true)
+            space(tile, 3)
+            text(tile, detail, 11, Color.rgb(235, 241, 250), false)
+            val tag = TextView(this).apply {
+                text = status.uppercase()
+                textSize = 9f
+                letterSpacing = 0.06f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                setPadding(dp(8), dp(5), dp(8), dp(5))
+                background = GradientDrawable().apply { setColor(0x33000000); cornerRadius = dp(12).toFloat() }
+            }
+            val tagParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10) }
+            tile.addView(tag, tagParams)
+            val params = LinearLayout.LayoutParams(0, dp(174), 1f).apply {
+                if (row.childCount > 0) marginStart = dp(8)
+            }
+            row.addView(tile, params)
+        }
+
+        fun featureRow(
+            a: Triple<String, String, String>, aStatus: String, aColors: IntArray, aAction: () -> Unit,
+            b: Triple<String, String, String>, bStatus: String, bColors: IntArray, bAction: () -> Unit
+        ) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            content.addView(row, fullWidth())
+            feature(row, a.first, a.second, a.third, aStatus, aColors, aAction)
+            feature(row, b.first, b.second, b.third, bStatus, bColors, bAction)
+            space(content, 9)
+        }
+
+        featureRow(
+            Triple("▶", "ELIX Social", "Discover videos, follow creators and connect with ministries."), "Available",
+            intArrayOf(Color.rgb(26, 64, 126), Color.rgb(11, 31, 68)), { showDiscover() },
+            Triple("◉", "ELIX Live", "Find live audio and video broadcasts."), "Live hub",
+            intArrayOf(Color.rgb(130, 37, 59), Color.rgb(65, 20, 48)), { showBroadcasts() }
+        )
+        featureRow(
+            Triple("♫", "ELIX Radio", "Listen to sermons, gospel audio and programmes."), "Available",
+            intArrayOf(Color.rgb(15, 112, 112), Color.rgb(8, 57, 72)), { showRadio() },
+            Triple("▤", "ELIX Word", "Bible reading, devotionals and study plans."), "Coming soon",
+            intArrayOf(Color.rgb(104, 75, 25), Color.rgb(58, 43, 20)), { showEcosystemPreview("ELIX Word", "A dedicated space for Scripture, daily devotionals, Bible reading plans, study notes and reminders.") }
+        )
+        featureRow(
+            Triple("▣", "ELIX Library", "Explore Christian books and published media."), "Available",
+            intArrayOf(Color.rgb(74, 59, 130), Color.rgb(36, 29, 77)), { showLibrary() },
+            Triple("♡", "ELIX Community", "Prayer groups, testimonies and fellowship."), "Coming soon",
+            intArrayOf(Color.rgb(19, 111, 87), Color.rgb(9, 61, 52)), { showEcosystemPreview("ELIX Community", "A safe place for prayer requests, testimonies, fellowship groups, Christian discussions and encouragement.") }
+        )
+        featureRow(
+            Triple("▦", "ELIX Events", "Discover conferences, crusades and programmes."), "Preview",
+            intArrayOf(Color.rgb(123, 68, 34), Color.rgb(70, 35, 24)), { showUpcoming() },
+            Triple("✦", "ELIX Academy", "Bible courses and ministry development."), "Coming soon",
+            intArrayOf(Color.rgb(35, 88, 119), Color.rgb(19, 46, 78)), { showEcosystemPreview("ELIX Academy", "A learning platform for Bible courses, discipleship, leadership development and ministry training.") }
+        )
+
+        val ministry = card(content)
+        text(ministry, "ARE YOU A MINISTRY OR CREATOR?", 11, gold, true)
+        space(ministry, 5)
+        text(ministry, "Bring your ministry into ELIX.", 18, white, true)
+        text(ministry, "Create a page, publish your messages and help your community discover your work.", 13, muted, false)
+        space(ministry, 10)
+        button(ministry, "EXPLORE MINISTRIES") { showHome() }
+    }
+
+    private fun showEcosystemPreview(section: String, description: String) {
+        base("Ecosystem", "ELIX ECOSYSTEM", section, description)
+        val preview = card(content)
+        text(preview, "COMING SOON", 11, gold, true)
+        space(preview, 7)
+        text(preview, "This experience is part of the ELIX roadmap.", 17, white, true)
+        text(preview, "We are building it as an integrated feature of ELIX, with its own tools and content while sharing the same account.", 13, muted, false)
+        button(content, "BACK TO ELIX ECOSYSTEM") { showExploreHub() }
     }
 
     private fun showBroadcasts() {
