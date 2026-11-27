@@ -150,6 +150,7 @@ class MainActivity : Activity() {
     }
 
     private fun base(active: String, eyebrow: String, title: String, subtitle: String) {
+        pauseAllHomeVideos()
         try { homeVideo?.stopPlayback() } catch (_: Exception) { }
         stopAudio()
         content.removeAllViews()
@@ -1094,6 +1095,7 @@ class MainActivity : Activity() {
         android.app.AlertDialog.Builder(this).setTitle("Edit your content").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create().also { d -> d.setOnShowListener { d.getButton(-1).setOnClickListener { val body=JSONObject().put("title",title.text.toString().trim()).put("description",desc.text.toString().trim()); SupabaseApi.patchWithError(this,"media_items?id=eq.${item.optString("id")}",body){ e -> runOnUiThread { info(if(e==null)"Content updated." else "Update failed: $e"); if(e==null)showAccount() } }; d.dismiss() } }; d.show() }
     }
     private fun showDiscover() {
+        pauseAllHomeVideos()
         content.removeAllViews()
         content.setPadding(0, 0, 0, 0)
         setNav("Discover")
@@ -1616,7 +1618,7 @@ class MainActivity : Activity() {
                 val player = homeVideo ?: return
                 player.visibility = View.VISIBLE
                 player.setVideoURI(Uri.parse(url))
-                player.setOnPreparedListener { mp -> mp.isLooping = true; mp.setVolume(if (discoverMuted) 0f else 1f, if (discoverMuted) 0f else 1f); mp.start() }
+                player.setOnPreparedListener { mp -> homeVideoMediaPlayers[video] = mp; mp.isLooping = true; mp.setVolume(if (discoverMuted) 0f else 1f, if (discoverMuted) 0f else 1f); mp.start() }
                 player.setOnErrorListener { _, _, _ -> info("This video could not be played."); true }
             }
             "audio" -> { homeAudioPanel?.visibility = View.VISIBLE; playAudio(title, path) }
