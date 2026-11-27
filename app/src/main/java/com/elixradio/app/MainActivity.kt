@@ -1102,7 +1102,7 @@ class MainActivity : Activity() {
             }
             wrap.addView(count, LinearLayout.LayoutParams(dp(58), dp(20)))
             actionRail.addView(wrap, LinearLayout.LayoutParams(dp(60), -2))
-            return TextView(this).apply { tag = listOf(icon, count) }
+            return count
         }
         val followAction = railAction("＋", "Follow") { followCurrentCreator() }
         val likeAction = railAction("♡", "0") {
@@ -1507,9 +1507,9 @@ class MainActivity : Activity() {
         val likeView = views.getOrNull(0) as? TextView
         val commentView = views.getOrNull(1) as? TextView
         val shareView = views.getOrNull(2) as? TextView
-        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.like&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) likeView?.text = "♡\\n" + rows.length() } }
-        SupabaseApi.getWithError(this, "media_comments?select=id&media_id=eq.$mediaId&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) commentView?.text = "▢\\n" + rows.length() } }
-        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.share&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) shareView?.text = "↗\\n" + rows.length() } }
+        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.like&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) likeView?.text = rows.length().toString() } }
+        SupabaseApi.getWithError(this, "media_comments?select=id&media_id=eq.$mediaId&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) commentView?.text = rows.length().toString() } }
+        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&event_type=eq.share&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) shareView?.text = rows.length().toString() } }
     }
 
     private fun shareCurrentFeedItem() {
