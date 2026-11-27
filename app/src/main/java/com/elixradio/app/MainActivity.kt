@@ -173,8 +173,11 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
-        base("Home", "ELIX COMMUNITY", "Home", "Follow ministries, creators and Christian content.")
-        content.setPadding(0, dp(8), 0, dp(18))
+        try { homeVideo?.stopPlayback() } catch (_: Exception) { }
+        stopAudio()
+        content.removeAllViews()
+        content.setPadding(0, dp(4), 0, dp(18))
+        setNav("Home")
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1176,6 +1179,8 @@ class MainActivity : Activity() {
     }
 
 
+    private var sortCommentsOldest = false
+
     private fun openCommentsForCurrentItem() {
         val item = homeFeedItems.getOrNull(homeFeedIndex) ?: return
         val mediaId = item.optString("id")
@@ -1184,139 +1189,123 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackground(GradientDrawable().apply {
                 setColor(Color.WHITE)
-                cornerRadii = floatArrayOf(dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(), 0f, 0f, 0f, 0f)
+                cornerRadii = floatArrayOf(dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), 0f, 0f, 0f, 0f)
             })
-            setPadding(dp(16), dp(8), dp(16), dp(10))
+            setPadding(dp(16), dp(8), dp(16), dp(8))
         }
-        val handle = View(this).apply {
-            background = GradientDrawable().apply { setColor(Color.rgb(205,205,205)); cornerRadius = dp(4).toFloat() }
-        }
-        val handleWrap = FrameLayout(this).apply { addView(handle, FrameLayout.LayoutParams(dp(38), dp(4), Gravity.CENTER)) }
+        val handleWrap = FrameLayout(this)
+        val handle = View(this).apply { background = GradientDrawable().apply { setColor(Color.LTGRAY); cornerRadius = dp(4).toFloat() } }
+        handleWrap.addView(handle, FrameLayout.LayoutParams(dp(38), dp(4), Gravity.CENTER))
         sheet.addView(handleWrap, LinearLayout.LayoutParams(-1, dp(22)))
-        val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        val headingText = TextView(this).apply {
-            text = "Comments"
-            textSize = 15f
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            setTextColor(Color.rgb(20,20,20))
-        }
-        heading.addView(headingText)
-        sheet.addView(heading, LinearLayout.LayoutParams(-1, dp(38)))
-        val divider = View(this).apply { setBackgroundColor(Color.rgb(238,238,238)) }
-        sheet.addView(divider, LinearLayout.LayoutParams(-1, dp(1)))
 
-        val commentScroll = ScrollView(this).apply { isFillViewport = false }
-        val commentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(12), 0, dp(12)) }
-        commentScroll.addView(commentList)
-        sheet.addView(commentScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        val composer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(4))
+        val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(2), dp(4), dp(10)) }
+        val title = TextView(this).apply { text = "Comments"; textSize = 17f; typeface = Typeface.create("sans-serif", Typeface.BOLD); setTextColor(Color.rgb(22,22,22)) }
+        heading.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
+        val sort = TextView(this).apply {
+            text = "Recent  ⌄"; textSize = 12f; setTextColor(Color.DKGRAY); setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener {
+                android.widget.PopupMenu(this@MainActivity, this).apply {
+                    menu.add("Recent"); menu.add("Oldest")
+                    setOnMenuItemClickListener { selected ->
+                        sortCommentsOldest = selected.title.toString() == "Oldest"
+                        loadComments()
+                        true
+                    }
+                }.show()
+            }
         }
+        heading.addView(sort)
+        sheet.addView(heading, LinearLayout.LayoutParams(-1, -2))
+        sheet.addView(View(this).apply { setBackgroundColor(Color.rgb(238,238,238)) }, LinearLayout.LayoutParams(-1, dp(1)))
+
+        val scroll = ScrollView(this).apply { isFillViewport = false; overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(8), dp(2), dp(16)) }
+        scroll.addView(list)
+        sheet.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        sheet.addView(View(this).apply { setBackgroundColor(Color.rgb(238,238,238)) }, LinearLayout.LayoutParams(-1, dp(1)))
+
+        val composer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, dp(4)) }
         val avatar = TextView(this).apply {
             text = AuthApi.currentName(this@MainActivity).take(1).uppercase().ifBlank { "E" }
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
+            textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(0,149,246)) }
         }
-        composer.addView(avatar, LinearLayout.LayoutParams(dp(36), dp(36)))
+        composer.addView(avatar, LinearLayout.LayoutParams(dp(38), dp(38)))
         val input = android.widget.EditText(this).apply {
-            hint = "Add a comment…"
-            textSize = 14f
-            setTextColor(Color.rgb(25,25,25))
-            setHintTextColor(Color.rgb(145,145,145))
-            setSingleLine(true)
-            background = GradientDrawable().apply { setColor(Color.rgb(246,246,246)); cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.rgb(235,235,235)) }
-            setPadding(dp(14), 0, dp(14), 0)
+            hint = "Add a comment…"; textSize = 14f; setTextColor(Color.rgb(25,25,25)); setHintTextColor(Color.GRAY)
+            minLines = 1; maxLines = 4; setPadding(dp(14), dp(9), dp(14), dp(9))
+            background = GradientDrawable().apply { setColor(Color.rgb(246,246,246)); cornerRadius = dp(24).toFloat(); setStroke(dp(1), Color.rgb(232,232,232)) }
         }
-        val inputParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(10); marginEnd = dp(8) }
-        composer.addView(input, inputParams)
-        val send = TextView(this).apply {
-            text = "Post"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(0,149,246))
-            gravity = Gravity.CENTER
-            setOnClickListener {
-                if (!AuthApi.isSignedIn(this@MainActivity)) { info("Sign in to comment."); return@setOnClickListener }
-                val value = input.text.toString().trim()
-                if (value.isBlank()) { input.error = "Write a comment first"; return@setOnClickListener }
-                send.isEnabled = false
-                val body = JSONObject()
-                    .put("media_id", mediaId)
-                    .put("user_id", AuthApi.currentUserId(this@MainActivity))
-                    .put("author_name", AuthApi.currentName(this@MainActivity).ifBlank { "ELIX member" })
-                    .put("comment_text", value)
-                SupabaseApi.postWithError(this@MainActivity, "media_comments", body) { error ->
-                    runOnUiThread {
-                        send.isEnabled = true
-                        if (error == null) { input.setText(""); loadComments() }
-                        else info("Comment could not be posted: " + error)
-                    }
+        composer.addView(input, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10); marginEnd = dp(8) })
+        val post = TextView(this).apply { text = "Post"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(0,149,246)); gravity = Gravity.CENTER }
+        post.setOnClickListener {
+            if (!AuthApi.isSignedIn(this@MainActivity)) { showAuthDialog(false); return@setOnClickListener }
+            val value = input.text.toString().trim()
+            if (value.isBlank()) { input.error = "Write a comment first"; return@setOnClickListener }
+            post.isEnabled = false
+            val body = JSONObject().put("media_id", mediaId).put("user_id", AuthApi.currentUserId(this@MainActivity))
+                .put("author_name", AuthApi.currentName(this@MainActivity).ifBlank { "ELIX member" }).put("comment_text", value)
+            SupabaseApi.postWithError(this@MainActivity, "media_comments", body) { error ->
+                runOnUiThread {
+                    post.isEnabled = true
+                    if (error == null) { input.setText(""); loadComments(); refreshFeedActionCounts(item) }
+                    else info("Comment could not be posted: $error")
                 }
             }
         }
-        composer.addView(send, LinearLayout.LayoutParams(dp(48), dp(44)))
+        composer.addView(post, LinearLayout.LayoutParams(dp(48), dp(42)))
         sheet.addView(composer, LinearLayout.LayoutParams(-1, -2))
-        dialog.setContentView(sheet)
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(-1, (resources.displayMetrics.heightPixels * 0.78f).toInt())
-            setGravity(Gravity.BOTTOM)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            attributes = attributes.apply { dimAmount = 0.42f }
-        }
 
         fun loadComments() {
-            commentList.removeAllViews()
-            val loading = TextView(this).apply { text = "Loading comments…"; textSize = 13f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(30), 0, dp(30)) }
-            commentList.addView(loading)
-            SupabaseApi.getWithError(this, "media_comments?select=id,comment_text,author_name,created_at&media_id=eq." + mediaId + "&order=created_at.asc&limit=200") { rows, error ->
+            list.removeAllViews()
+            val loading = TextView(this).apply { text = "Loading comments…"; textSize = 13f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(36), 0, dp(36)) }
+            list.addView(loading)
+            val order = if (sortCommentsOldest) "asc" else "desc"
+            SupabaseApi.getWithError(this, "media_comments?select=id,comment_text,author_name,created_at&media_id=eq.$mediaId&order=created_at.$order&limit=200") { rows, error ->
                 runOnUiThread {
-                    commentList.removeAllViews()
+                    list.removeAllViews()
                     if (error != null) {
-                        val failed = TextView(this).apply { text = "Comments couldn't load. Please try again."; textSize = 13f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(28), 0, dp(28)) }
-                        commentList.addView(failed)
-                    } else if (rows.length() == 0) {
-                        val empty = TextView(this).apply { text = "No comments yet\nBe the first to share your thoughts."; textSize = 14f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(44), 0, dp(44)) }
-                        commentList.addView(empty)
-                    } else for (i in 0 until rows.length()) {
-                        val row = rows.getJSONObject(i)
-                        val commentRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP; setPadding(0, dp(9), 0, dp(9)) }
-                        val userAvatar = TextView(this).apply {
-                            text = row.optString("author_name").take(1).uppercase().ifBlank { "E" }
-                            textSize = 12f
-                            gravity = Gravity.CENTER
-                            setTextColor(Color.WHITE)
-                            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(115,125,145)) }
+                        val failed = TextView(this).apply { text = "Comments couldn't load. Reopen to try again."; textSize = 13f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(28), 0, dp(28)) }
+                        list.addView(failed)
+                    } else {
+                        title.text = "Comments · ${rows.length()}"
+                        if (rows.length() == 0) {
+                            val empty = TextView(this).apply { text = "No comments yet\nBe the first to share your thoughts."; textSize = 14f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(0, dp(54), 0, dp(54)) }
+                            list.addView(empty)
+                        } else for (i in 0 until rows.length()) {
+                            val row = rows.getJSONObject(i)
+                            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP; setPadding(dp(2), dp(11), dp(2), dp(11)) }
+                            val userAvatar = TextView(this).apply {
+                                text = row.optString("author_name").take(1).uppercase().ifBlank { "E" }; textSize = 12f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+                                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(120 + i % 50, 130 + i % 45, 150 + i % 40)) }
+                            }
+                            line.addView(userAvatar, LinearLayout.LayoutParams(dp(38), dp(38)))
+                            val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(11), 0, dp(8), 0) }
+                            val author = TextView(this).apply { text = row.optString("author_name").ifBlank { "ELIX member" }; textSize = 12f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(28,28,28)) }
+                            val message = TextView(this).apply { text = row.optString("comment_text"); textSize = 13f; setTextColor(Color.rgb(45,45,45)); setPadding(0, dp(3), 0, dp(4)); setLineSpacing(dp(2).toFloat(), 1f) }
+                            val reply = TextView(this).apply { text = "Reply"; textSize = 11f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.GRAY) }
+                            body.addView(author); body.addView(message); body.addView(reply)
+                            line.addView(body, LinearLayout.LayoutParams(0, -2, 1f))
+                            val heart = TextView(this).apply { text = "♡"; textSize = 21f; setTextColor(Color.GRAY); gravity = Gravity.CENTER; setPadding(dp(8), 0, dp(3), 0) }
+                            line.addView(heart, LinearLayout.LayoutParams(dp(34), dp(38)))
+                            list.addView(line, fullWidth())
                         }
-                        commentRow.addView(userAvatar, LinearLayout.LayoutParams(dp(34), dp(34)))
-                        val bodyColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), 0, dp(6), 0) }
-                        val author = TextView(this).apply {
-                            text = row.optString("author_name").ifBlank { "ELIX member" }
-                            textSize = 12f
-                            typeface = Typeface.DEFAULT_BOLD
-                            setTextColor(Color.rgb(30,30,30))
-                        }
-                        val message = TextView(this).apply { text = row.optString("comment_text"); textSize = 13f; setTextColor(Color.rgb(55,55,55)); setPadding(0, dp(3), 0, dp(2)) }
-                        bodyColumn.addView(author)
-                        bodyColumn.addView(message)
-                        commentRow.addView(bodyColumn, LinearLayout.LayoutParams(0, -2, 1f))
-                        commentList.addView(commentRow, fullWidth())
                     }
                 }
             }
         }
-        loadComments()
+
+        dialog.setContentView(sheet)
         dialog.show()
         dialog.window?.apply {
             setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(-1, (resources.displayMetrics.heightPixels * 0.78f).toInt())
+            setLayout(-1, (resources.displayMetrics.heightPixels * 0.91f).toInt())
             setGravity(Gravity.BOTTOM)
+            setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.45f }
         }
+        loadComments()
     }
 
     private fun followCurrentCreator() {
