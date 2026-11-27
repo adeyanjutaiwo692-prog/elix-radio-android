@@ -1,7 +1,10 @@
 -- ELIX 24-hour stories
 create table if not exists public.media_stories (
     id uuid primary key default gen_random_uuid(),
-    media_id uuid not null references public.media_items(id) on delete cascade,
+    media_id uuid references public.media_items(id) on delete cascade,
+    file_path text not null,
+    media_type text not null check (media_type in ('image','video')),
+    title text not null default 'ELIX story',
     created_by uuid not null references auth.users(id) on delete cascade,
     created_at timestamptz not null default now(),
     expires_at timestamptz not null default (now() + interval '24 hours')
