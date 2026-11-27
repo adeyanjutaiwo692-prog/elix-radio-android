@@ -202,6 +202,7 @@ class MainActivity : Activity() {
             textSize = 27f
             gravity = Gravity.CENTER
             setTextColor(white)
+            setOnClickListener { showCommunity() }
         }
         header.addView(messages, LinearLayout.LayoutParams(dp(42), dp(42)))
         content.addView(header, fullWidth())
@@ -1304,8 +1305,6 @@ class MainActivity : Activity() {
                         bodyColumn.addView(author)
                         bodyColumn.addView(message)
                         commentRow.addView(bodyColumn, LinearLayout.LayoutParams(0, -2, 1f))
-                        val like = TextView(this).apply { text = "♡"; textSize = 18f; setTextColor(Color.GRAY) }
-                        commentRow.addView(like)
                         commentList.addView(commentRow, fullWidth())
                     }
                 }
