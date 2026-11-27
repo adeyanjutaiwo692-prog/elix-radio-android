@@ -51,6 +51,10 @@ class MainActivity : Activity() {
     private var homeFeedCategory: TextView? = null
     private var homeFeedPosition: TextView? = null
     private var homeFeedFrame: FrameLayout? = null
+    private val homeVideoPlayers = ArrayList<VideoView>()
+    private var activeHomeVideo: VideoView? = null
+    private var homeVideosMuted = true
+    private val homeVideoMediaPlayers = java.util.WeakHashMap<VideoView, MediaPlayer>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -174,6 +178,9 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+        pauseAllHomeVideos()
+        homeVideoPlayers.clear()
+        activeHomeVideo = null
         try { homeVideo?.stopPlayback() } catch (_: Exception) { }
         stopAudio()
         content.removeAllViews()
@@ -371,10 +378,35 @@ class MainActivity : Activity() {
                         }
                         "video" -> {
                             val player = VideoView(this@MainActivity)
-                            media.addView(player, FrameLayout.LayoutParams(-1, dp(340)))
+                            val videoHeight = dp(340)
+                            media.addView(player, FrameLayout.LayoutParams(-1, videoHeight, Gravity.CENTER))
+                            homeVideoPlayers.add(player)
+                            val mute = TextView(this@MainActivity).apply {
+                                text = if (homeVideosMuted) "🔇" else "🔊"
+                                textSize = 17f; gravity = Gravity.CENTER
+                                setTextColor(Color.WHITE)
+                                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x88000000.toInt()) }
+                                setOnClickListener {
+                                    homeVideosMuted = !homeVideosMuted
+                                    homeVideoMediaPlayers.values.forEach { mp -> try { mp.setVolume(if (homeVideosMuted) 0f else 1f, if (homeVideosMuted) 0f else 1f) } catch (_: Exception) { } }
+                                    text = if (homeVideosMuted) "🔇" else "🔊"
+                                }
+                            }
+                            media.addView(mute, FrameLayout.LayoutParams(dp(42), dp(42), Gravity.RIGHT or Gravity.TOP).apply { setMargins(0, dp(10), dp(10), 0) })
+                            player.setOnClickListener { if (player.isPlaying) player.pause() else playOnlyVisibleHomeVideo(player) }
+                            player.setOnLongClickListener { try { player.seekTo((player.currentPosition + 10000).coerceAtLeast(0)) } catch (_: Exception) { }; true }
                             if (filePath.isNotBlank()) {
                                 player.setVideoURI(Uri.parse(mediaUrl))
-                                player.setOnPreparedListener { mp -> mp.isLooping = true; player.start() }
+                                player.setOnPreparedListener { mp ->
+                                    mp.isLooping = true
+                                    homeVideoMediaPlayers[player] = mp
+                                    mp.setVolume(if (homeVideosMuted) 0f else 1f, if (homeVideosMuted) 0f else 1f)
+                                    val vw = mp.videoWidth.coerceAtLeast(1); val vh = mp.videoHeight.coerceAtLeast(1)
+                                    val screenWidth = resources.displayMetrics.widthPixels
+                                    val targetHeight = (screenWidth.toFloat() * vh / vw).toInt().coerceIn(dp(220), dp(520))
+                                    player.layoutParams = FrameLayout.LayoutParams(-1, targetHeight, Gravity.CENTER)
+                                    playOnlyVisibleHomeVideo(player)
+                                }
                                 player.setOnErrorListener { _, _, _ -> true }
                             }
                         }
@@ -442,6 +474,11 @@ class MainActivity : Activity() {
                     card.setPadding(0, 0, 0, dp(12))
                     val margin = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
                     feed.addView(card, margin)
+                }
+                val scrollParent = content.parent
+                if (scrollParent is ScrollView) {
+                    scrollParent.setOnScrollChangeListener { _, _, _, _, _ -> updateVisibleHomeVideo() }
+                    content.post { updateVisibleHomeVideo() }
                 }
             }
         }
@@ -1168,9 +1205,16 @@ class MainActivity : Activity() {
         frame.addView(actionRail, railParams)
 
         frame.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        val discoverMute = TextView(this).apply {
+            text = "🔇"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x88000000.toInt()) }
+            setOnClickListener { discoverMuted = !discoverMuted; applyDiscoverMute(); text = if (discoverMuted) "🔇" else "🔊" }
+        }
+        frame.addView(discoverMute, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.RIGHT or Gravity.TOP).apply { topMargin = dp(54); rightMargin = dp(14) })
         val detector = android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: android.view.MotionEvent): Boolean = true
-            override fun onLongPress(e: android.view.MotionEvent) { toggleFeedPlayback() }
+            override fun onSingleTapConfirmed(e: android.view.MotionEvent): Boolean { toggleFeedPlayback(); return true }
+            override fun onLongPress(e: android.view.MotionEvent) { seekFeed(10000) }
             override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 if (e1 == null) return false
                 val delta = e2.y - e1.y
@@ -1572,7 +1616,7 @@ class MainActivity : Activity() {
                 val player = homeVideo ?: return
                 player.visibility = View.VISIBLE
                 player.setVideoURI(Uri.parse(url))
-                player.setOnPreparedListener { mp -> mp.isLooping = true; mp.start() }
+                player.setOnPreparedListener { mp -> mp.isLooping = true; mp.setVolume(if (discoverMuted) 0f else 1f, if (discoverMuted) 0f else 1f); mp.start() }
                 player.setOnErrorListener { _, _, _ -> info("This video could not be played."); true }
             }
             "audio" -> { homeAudioPanel?.visibility = View.VISIBLE; playAudio(title, path) }
@@ -1588,6 +1632,38 @@ class MainActivity : Activity() {
             }
             else -> { homeAudioPanel?.visibility = View.VISIBLE }
         }
+    }
+
+    private var discoverMuted = true
+
+    private fun applyDiscoverMute() {
+        try { mediaPlayer?.setVolume(if (discoverMuted) 0f else 1f, if (discoverMuted) 0f else 1f) } catch (_: Exception) { }
+        try { homeVideoMediaPlayers[homeVideo]?.setVolume(if (discoverMuted) 0f else 1f, if (discoverMuted) 0f else 1f) } catch (_: Exception) { }
+    }
+
+    private fun pauseAllHomeVideos() {
+        homeVideoPlayers.forEach { player -> try { if (player.isPlaying) player.pause() } catch (_: Exception) { } }
+        activeHomeVideo = null
+    }
+
+    private fun playOnlyVisibleHomeVideo(candidate: VideoView) {
+        val rect = android.graphics.Rect()
+        if (!candidate.getGlobalVisibleRect(rect) || rect.height() < dp(100)) return
+        homeVideoPlayers.forEach { player ->
+            if (player !== candidate) try { if (player.isPlaying) player.pause() } catch (_: Exception) { }
+        }
+        try {
+            if (!candidate.isPlaying) candidate.start()
+            activeHomeVideo = candidate
+        } catch (_: Exception) { }
+    }
+
+    private fun updateVisibleHomeVideo() {
+        val candidate = homeVideoPlayers.firstOrNull { player ->
+            val rect = android.graphics.Rect()
+            player.getGlobalVisibleRect(rect) && rect.height() >= dp(180)
+        }
+        if (candidate == null) pauseAllHomeVideos() else playOnlyVisibleHomeVideo(candidate)
     }
 
     private fun toggleFeedPlayback() {
