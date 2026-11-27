@@ -406,7 +406,7 @@ class MainActivity : Activity() {
                                     val screenWidth = resources.displayMetrics.widthPixels
                                     val targetHeight = (screenWidth.toFloat() * vh / vw).toInt().coerceIn(dp(220), dp(520))
                                     player.layoutParams = FrameLayout.LayoutParams(-1, targetHeight, Gravity.CENTER)
-                                    playOnlyVisibleHomeVideo(player)
+                                    updateVisibleHomeVideo()
                                 }
                                 player.setOnErrorListener { _, _, _ -> true }
                             }
@@ -1650,7 +1650,7 @@ class MainActivity : Activity() {
 
     private fun playOnlyVisibleHomeVideo(candidate: VideoView) {
         val rect = android.graphics.Rect()
-        if (!candidate.getGlobalVisibleRect(rect) || rect.height() < dp(100)) return
+        if (!candidate.getGlobalVisibleRect(rect) || rect.height() < dp(180)) return
         homeVideoPlayers.forEach { player ->
             if (player !== candidate) try { if (player.isPlaying) player.pause() } catch (_: Exception) { }
         }
@@ -1661,7 +1661,10 @@ class MainActivity : Activity() {
     }
 
     private fun updateVisibleHomeVideo() {
-        val candidate = homeVideoPlayers.firstOrNull { player ->
+        val candidate = homeVideoPlayers.maxByOrNull { player ->
+            val rect = android.graphics.Rect()
+            if (player.getGlobalVisibleRect(rect)) rect.height().toFloat() / player.height.coerceAtLeast(1) else 0f
+        }?.takeIf { player ->
             val rect = android.graphics.Rect()
             player.getGlobalVisibleRect(rect) && rect.height() >= dp(180)
         }
