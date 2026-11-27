@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var nav: LinearLayout
     private val uploadRequestCode = 4107
+    private val storyRequestCode = 4110
     private var selectedUploadType = "audio"
     private var selectedPageId: String? = null
     private var libraryType = "all"
@@ -219,12 +220,12 @@ class MainActivity : Activity() {
         storyScroll.addView(stories)
         content.addView(storyScroll, fullWidth())
 
-        fun addStory(name: String, imageUrl: String, isOwn: Boolean = false) {
+        fun addStory(name: String, imageUrl: String, isOwn: Boolean = false, onOpen: (() -> Unit)? = null) {
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(dp(5), dp(3), dp(5), dp(3))
-                setOnClickListener { if (isOwn) { if (AuthApi.isSignedIn(this@MainActivity)) showAccount() else showAuthDialog(false) } }
+                setOnClickListener { if (isOwn) { if (AuthApi.isSignedIn(this@MainActivity)) chooseStoryUpload() else showAuthDialog(false) } else onOpen?.invoke() }
             }
             val ring = FrameLayout(this).apply {
                 background = GradientDrawable().apply {
@@ -266,6 +267,18 @@ class MainActivity : Activity() {
             stories.addView(item, LinearLayout.LayoutParams(dp(76), -2))
         }
         addStory("Your story", "", true)
+        SupabaseApi.getWithError(this, "media_stories?select=id,expires_at,media_items(id,title,media_type,file_path)&expires_at=gt.now()&order=created_at.desc&limit=30") { storyRows, storyError ->
+            runOnUiThread {
+                if (storyError == null) for (i in 0 until storyRows.length()) {
+                    val story = storyRows.getJSONObject(i)
+                    val media = story.optJSONObject("media_items") ?: continue
+                    val path = media.optString("file_path")
+                    val type = media.optString("media_type")
+                    val thumb = if (type == "image") BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/") else ""
+                    addStory(media.optString("title", "ELIX story"), thumb) { openStoryViewer(media) }
+                }
+            }
+        }
         SupabaseApi.getWithError(this, "ministries?select=id,name,logo_url&order=name.asc&limit=30") { pages, error ->
             runOnUiThread {
                 if (error == null) for (i in 0 until pages.length()) {
@@ -1325,6 +1338,78 @@ class MainActivity : Activity() {
         reloadComments?.invoke()
     }
 
+    private fun chooseStoryUpload() {
+        if (!AuthApi.isSignedIn(this)) { showAuthDialog(false); return }
+        val picker = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+        }
+        startActivityForResult(Intent.createChooser(picker, "Choose a photo or video for your story"), storyRequestCode)
+    }
+
+    private fun publishStory(uri: Uri) {
+        val mime = contentResolver.getType(uri).orEmpty()
+        val type = if (mime.startsWith("video/")) "video" else if (mime.startsWith("image/")) "image" else ""
+        if (type.isBlank()) { info("Choose an image or video."); return }
+        val title = AuthApi.currentName(this).ifBlank { "ELIX member" } + "'s story"
+        info("Uploading your story…")
+        UploadApi.upload(this, uri, title, type, "story", null) { uploaded ->
+            if (!uploaded.ok || uploaded.filePath.isNullOrBlank()) {
+                runOnUiThread { info("Story upload failed: " + uploaded.message) }
+                return@upload
+            }
+            SupabaseApi.getWithError(this, "media_items?select=id&file_path=eq." + Uri.encode(uploaded.filePath) + "&uploaded_by=eq." + AuthApi.currentUserId(this) + "&limit=1") { rows, error ->
+                if (error != null || rows.length() == 0) {
+                    runOnUiThread { info("Your file uploaded, but ELIX could not attach it to a story. " + (error ?: "")) }
+                    return@getWithError
+                }
+                val mediaId = rows.getJSONObject(0).optString("id")
+                val body = JSONObject().put("media_id", mediaId).put("created_by", AuthApi.currentUserId(this))
+                    .put("expires_at", java.time.Instant.now().plusSeconds(24 * 60 * 60).toString())
+                SupabaseApi.postWithError(this, "media_stories", body) { saveError ->
+                    runOnUiThread {
+                        if (saveError == null) { info("Your story is live for 24 hours."); showHome() }
+                        else info("Media uploaded, but story publishing failed: $saveError")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun openStoryViewer(media: JSONObject) {
+        val path = media.optString("file_path")
+        val type = media.optString("media_type")
+        if (path.isBlank()) return
+        val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(path, "/")
+        val viewer = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        if (type == "video") {
+            val player = VideoView(this)
+            viewer.addView(player, FrameLayout.LayoutParams(-1, -1))
+            player.setVideoURI(Uri.parse(url))
+            player.setOnPreparedListener { mp -> mp.isLooping = true; player.start() }
+        } else {
+            val image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+            viewer.addView(image, FrameLayout.LayoutParams(-1, -1))
+            Thread {
+                try {
+                    val bitmap = URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+                    runOnUiThread { if (bitmap != null) image.setImageBitmap(bitmap) }
+                } catch (_: Exception) { }
+            }.start()
+        }
+        val caption = TextView(this).apply {
+            text = media.optString("title", "ELIX story")
+            textSize = 15f; setTextColor(Color.WHITE); setPadding(dp(16), dp(24), dp(16), dp(16))
+            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0x99000000.toInt(), 0x00000000))
+        }
+        viewer.addView(caption, FrameLayout.LayoutParams(-1, dp(90), Gravity.BOTTOM))
+        val dialog = android.app.Dialog(this)
+        dialog.setContentView(viewer)
+        dialog.show()
+        dialog.window?.apply { setBackgroundDrawableResource(android.R.color.black); setLayout(-1, -1) }
+    }
+
     private fun toggleLikeForItem(item: JSONObject) {
         if (!AuthApi.isSignedIn(this)) { showAuthDialog(false); return }
         val mediaId = item.optString("id")
@@ -1730,6 +1815,12 @@ class MainActivity : Activity() {
     @Deprecated("Use platform activity result APIs")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == storyRequestCode && resultCode == RESULT_OK) {
+            val storyUri = data?.data
+            if (storyUri != null) publishStory(storyUri)
+            else info("Could not read the selected story file.")
+            return
+        }
         if ((requestCode == profileImageRequestCode || requestCode == pageImageRequestCode) && resultCode == RESULT_OK) {
             var uri = data?.data
             if (uri == null) {
