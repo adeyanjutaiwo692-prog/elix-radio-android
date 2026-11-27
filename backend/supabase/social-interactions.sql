@@ -45,6 +45,25 @@ create policy "ELIX engagement own insert" on public.media_engagement_events for
   with check (user_id = auth.uid());
 grant select, insert on public.media_engagement_events to authenticated;
 
+-- Allow a signed-in member to undo their own like.
+drop policy if exists "ELIX engagement own delete" on public.media_engagement_events;
+create policy "ELIX engagement own delete" on public.media_engagement_events
+  for delete to authenticated using (user_id = auth.uid());
+grant delete on public.media_engagement_events to authenticated;
+
+-- Public aggregate-only counts for feed counters; individual engagement rows stay private.
+create or replace view public.media_like_counts as
+  select media_id, count(*)::bigint as like_count
+  from public.media_engagement_events
+  where event_type = 'like'
+  group by media_id;
+create or replace view public.media_share_counts as
+  select media_id, count(*)::bigint as share_count
+  from public.media_engagement_events
+  where event_type = 'share'
+  group by media_id;
+grant select on public.media_like_counts, public.media_share_counts to anon, authenticated;
+
 -- Free creator subscriptions are distinct from paid billing subscriptions.
 create table if not exists public.creator_subscriptions (
   user_id uuid not null references auth.users(id) on delete cascade,
