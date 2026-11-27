@@ -1086,13 +1086,7 @@ class MainActivity : Activity() {
         val position = TextView(this).apply { text = "Loading your feed…"; textSize = 12f; setTextColor(muted) }
         homeFeedPosition = position
         overlay.addView(position)
-        val playback = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(8), dp(5), dp(8), dp(5)); background = GradientDrawable().apply { setColor(0x66000000); cornerRadius = dp(22).toFloat() } }
-        val backSeek = Button(this).apply { text = "−10s"; isAllCaps = false; setOnClickListener { seekFeed(-10000) } }
-        val pausePlay = Button(this).apply { text = "Ⅱ  PAUSE"; isAllCaps = false; setOnClickListener { toggleFeedPlayback() } }
-        val forwardSeek = Button(this).apply { text = "+10s"; isAllCaps = false; setOnClickListener { seekFeed(10000) } }
-        feedPlayButton = pausePlay
-        playback.addView(backSeek); playback.addView(pausePlay); playback.addView(forwardSeek)
-        overlay.addView(playback, LinearLayout.LayoutParams(-1, dp(48)))
+        feedPlayButton = null
         val actionRail = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -1160,25 +1154,22 @@ class MainActivity : Activity() {
         val railParams = FrameLayout.LayoutParams(dp(64), -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL)
         railParams.rightMargin = dp(5)
         frame.addView(actionRail, railParams)
-        val feedback = Button(this).apply { text = "⋯  NOT INTERESTED"; isAllCaps = false; setOnClickListener {
-            val item = homeFeedItems.getOrNull(homeFeedIndex)
-            if (item != null) FeedEngagementApi.record(this@MainActivity, item.optString("id"), "not_interested")
-            moveFeed(1)
-        } }
-        overlay.addView(feedback)
+
         frame.addView(overlay, FrameLayout.LayoutParams(-1, -1))
-        val touch = View.OnTouchListener { _, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> { feedTouchY = event.y; true }
-                android.view.MotionEvent.ACTION_UP -> {
-                    val delta = event.y - feedTouchY
-                    if (kotlin.math.abs(delta) > dp(55)) { if (delta < 0) moveFeed(1) else moveFeed(-1) }
-                    true
+        val detector = android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: android.view.MotionEvent): Boolean = true
+            override fun onLongPress(e: android.view.MotionEvent) { toggleFeedPlayback() }
+            override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 == null) return false
+                val delta = e2.y - e1.y
+                if (kotlin.math.abs(delta) > dp(45) && kotlin.math.abs(velocityY) > dp(70)) {
+                    moveFeed(if (delta < 0) 1 else -1)
+                    return true
                 }
-                else -> true
+                return false
             }
-        }
-        feedTouchY = 0f
+        })
+        val touch = View.OnTouchListener { _, event -> detector.onTouchEvent(event) }
         frame.setOnTouchListener(touch)
         video.setOnTouchListener(touch)
         image.setOnTouchListener(touch)
