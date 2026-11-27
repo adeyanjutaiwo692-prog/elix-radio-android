@@ -1618,7 +1618,7 @@ class MainActivity : Activity() {
                 val player = homeVideo ?: return
                 player.visibility = View.VISIBLE
                 player.setVideoURI(Uri.parse(url))
-                player.setOnPreparedListener { mp -> homeVideoMediaPlayers[video] = mp; mp.isLooping = true; mp.setVolume(if (discoverMuted) 0f else 1f, if (discoverMuted) 0f else 1f); mp.start() }
+                player.setOnPreparedListener { mp -> homeVideoMediaPlayers[player] = mp; mp.isLooping = true; mp.setVolume(if (discoverMuted) 0f else 1f, if (discoverMuted) 0f else 1f); mp.start() }
                 player.setOnErrorListener { _, _, _ -> info("This video could not be played."); true }
             }
             "audio" -> { homeAudioPanel?.visibility = View.VISIBLE; playAudio(title, path) }
