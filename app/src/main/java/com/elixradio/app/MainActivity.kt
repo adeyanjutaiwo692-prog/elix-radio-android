@@ -1365,8 +1365,11 @@ class MainActivity : Activity() {
                     return@getWithError
                 }
                 val mediaId = rows.getJSONObject(0).optString("id")
+                val expiryFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }
                 val body = JSONObject().put("media_id", mediaId).put("created_by", AuthApi.currentUserId(this))
-                    .put("expires_at", java.time.Instant.now().plusSeconds(24 * 60 * 60).toString())
+                    .put("expires_at", expiryFormat.format(java.util.Date(System.currentTimeMillis() + 24L * 60L * 60L * 1000L)))
                 SupabaseApi.postWithError(this, "media_stories", body) { saveError ->
                     runOnUiThread {
                         if (saveError == null) { info("Your story is live for 24 hours."); showHome() }
