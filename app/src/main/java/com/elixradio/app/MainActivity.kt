@@ -345,25 +345,44 @@ class MainActivity : Activity() {
                     val media = FrameLayout(this@MainActivity).apply { setBackgroundColor(Color.rgb(18,18,18)) }
                     val mediaType = post.optString("media_type", "video")
                     val filePath = post.optString("file_path")
-                    if (mediaType == "image" && filePath.isNotBlank()) {
-                        val imageView = ImageView(this@MainActivity).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-                        media.addView(imageView, FrameLayout.LayoutParams(-1, dp(340)))
-                        val mediaUrl = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(filePath, "/")
-                        Thread {
-                            try {
-                                val bitmap = URL(mediaUrl).openStream().use { BitmapFactory.decodeStream(it) }
-                                runOnUiThread { if (bitmap != null && imageView.parent != null) imageView.setImageBitmap(bitmap) }
-                            } catch (_: Exception) { }
-                        }.start()
-                    } else {
-                        val play = TextView(this@MainActivity).apply {
-                            text = if (mediaType == "audio") "♫" else "▶"
-                            textSize = 54f
-                            gravity = Gravity.CENTER
-                            setTextColor(Color.WHITE)
-                            setOnClickListener { openMedia(filePath, mediaType) }
+                    val mediaUrl = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/elix-media/" + Uri.encode(filePath, "/")
+                    when (mediaType) {
+                        "image" -> {
+                            val imageView = ImageView(this@MainActivity).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                            media.addView(imageView, FrameLayout.LayoutParams(-1, dp(340)))
+                            if (filePath.isNotBlank()) Thread {
+                                try {
+                                    val bitmap = URL(mediaUrl).openStream().use { BitmapFactory.decodeStream(it) }
+                                    runOnUiThread { if (bitmap != null && imageView.parent != null) imageView.setImageBitmap(bitmap) }
+                                } catch (_: Exception) { }
+                            }.start()
                         }
-                        media.addView(play, FrameLayout.LayoutParams(-1, dp(300)))
+                        "video" -> {
+                            val player = VideoView(this@MainActivity)
+                            media.addView(player, FrameLayout.LayoutParams(-1, dp(340)))
+                            if (filePath.isNotBlank()) {
+                                player.setVideoURI(Uri.parse(mediaUrl))
+                                player.setOnPreparedListener { mp -> mp.isLooping = true; player.start() }
+                                player.setOnErrorListener { _, _, _ -> true }
+                            }
+                        }
+                        "audio" -> {
+                            val audio = LinearLayout(this@MainActivity).apply {
+                                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                                setPadding(dp(20), dp(20), dp(20), dp(20))
+                                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(8,25,58), Color.rgb(0,110,170)))
+                            }
+                            val icon = TextView(this@MainActivity).apply { text = "♫"; textSize = 52f; gravity = Gravity.CENTER; setTextColor(Color.WHITE) }
+                            audio.addView(icon, LinearLayout.LayoutParams(-1, dp(120)))
+                            val label = TextView(this@MainActivity).apply { text = "ELIX AUDIO"; textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.WHITE) }
+                            audio.addView(label)
+                            media.addView(audio, FrameLayout.LayoutParams(-1, dp(240)))
+                            if (i == 0 && filePath.isNotBlank()) playAudio(post.optString("title"), filePath)
+                        }
+                        else -> {
+                            val placeholder = TextView(this@MainActivity).apply { text = "ELIX MEDIA"; textSize = 24f; gravity = Gravity.CENTER; setTextColor(Color.WHITE) }
+                            media.addView(placeholder, FrameLayout.LayoutParams(-1, dp(240)))
+                        }
                     }
                     card.addView(media, fullWidth())
 
@@ -382,8 +401,8 @@ class MainActivity : Activity() {
                         }
                     }
                     actions.addView(action("♡") {
-                        if (!AuthApi.isSignedIn(this@MainActivity)) showAuthDialog(false)
-                        else FeedEngagementApi.record(this@MainActivity, post.optString("id"), "like")
+                        if (!AuthApi.isSignedIn(this@MainActivity)) { showAuthDialog(false); return@action }
+                        toggleLikeForItem(post)
                     })
                     actions.addView(action("▢") {
                         homeFeedIndex = homeFeedItems.indexOfFirst { it.optString("id") == post.optString("id") }.coerceAtLeast(0)
@@ -401,6 +420,7 @@ class MainActivity : Activity() {
                         setOnClickListener {
                             homeFeedIndex = homeFeedItems.indexOfFirst { it.optString("id") == post.optString("id") }.coerceAtLeast(0)
                             followCurrentCreator()
+                            text = "Following"
                         }
                     }
                     actions.addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
@@ -1312,6 +1332,27 @@ class MainActivity : Activity() {
             attributes = attributes.apply { dimAmount = 0.45f }
         }
         reloadComments?.invoke()
+    }
+
+    private fun toggleLikeForItem(item: JSONObject) {
+        if (!AuthApi.isSignedIn(this)) { showAuthDialog(false); return }
+        val mediaId = item.optString("id")
+        val userId = AuthApi.currentUserId(this)
+        if (mediaId.isBlank() || userId.isBlank()) return
+        SupabaseApi.getWithError(this, "media_engagement_events?select=id&media_id=eq.$mediaId&user_id=eq.$userId&event_type=eq.like&limit=1") { rows, error ->
+            if (error != null) { runOnUiThread { info("Like service unavailable: $error") }; return@getWithError }
+            if (rows.length() > 0) {
+                val id = rows.getJSONObject(0).optString("id")
+                SupabaseApi.deleteWithError(this, "media_engagement_events?id=eq.$id") { e ->
+                    runOnUiThread { if (e != null) info("Could not remove like: $e") }
+                }
+            } else {
+                val body = JSONObject().put("user_id", userId).put("media_id", mediaId).put("event_type", "like").put("watch_seconds", 0)
+                SupabaseApi.postWithError(this, "media_engagement_events", body) { e ->
+                    runOnUiThread { if (e != null) info("Like could not be saved: $e") }
+                }
+            }
+        }
     }
 
     private fun followCurrentCreator() {
