@@ -1123,15 +1123,20 @@ class MainActivity : Activity() {
                             runOnUiThread { if (e != null) info("Could not remove like: " + e); refreshFeedActionCounts(item) }
                         }
                     } else {
-                        FeedEngagementApi.record(this@MainActivity, mediaId, "like")
-                        runOnUiThread { refreshFeedActionCounts(item) }
+                        val body = JSONObject().put("user_id", userId).put("media_id", mediaId).put("event_type", "like").put("watch_seconds", 0)
+                        SupabaseApi.postWithError(this@MainActivity, "media_engagement_events", body) { saveError ->
+                            runOnUiThread {
+                                if (saveError != null) info("Like could not be saved: $saveError")
+                                refreshFeedActionCounts(item)
+                            }
+                        }
                     }
                 }
             }
         }
         val commentAction = railAction("▢", "0") { openCommentsForCurrentItem() }
         val shareAction = railAction("↗", "Share") { shareCurrentFeedItem() }
-        homeFeedFrame?.tag = listOf(likeAction, commentAction, shareAction)
+        homeFeedFrame?.tag = listOf(likeAction, commentAction, shareAction, followAction)
         val railParams = FrameLayout.LayoutParams(dp(64), -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL)
         railParams.rightMargin = dp(5)
         frame.addView(actionRail, railParams)
@@ -1317,9 +1322,9 @@ class MainActivity : Activity() {
         SupabaseApi.getWithError(this, "ministry_follows?select=user_id&user_id=eq.$userId&ministry_id=eq.$pageId&limit=1") { rows, e ->
             if (e != null) { runOnUiThread { info("Could not check follow status: $e") }; return@getWithError }
             if (rows.length() > 0) SupabaseApi.deleteWithError(this, "ministry_follows?user_id=eq.$userId&ministry_id=eq.$pageId") { err ->
-                runOnUiThread { info(if (err == null) "Unfollowed creator." else "Could not unfollow: $err") }
+                runOnUiThread { info(if (err == null) "Unfollowed creator." else "Could not unfollow: $err"); if (err == null) refreshFeedActionCounts(item) }
             } else SupabaseApi.postWithError(this, "ministry_follows", JSONObject().put("user_id", userId).put("ministry_id", pageId)) { err ->
-                runOnUiThread { info(if (err == null) "Following creator." else "Follow could not be saved: $err") }
+                runOnUiThread { info(if (err == null) "Following creator." else "Follow could not be saved: $err"); if (err == null) refreshFeedActionCounts(item) }
             }
         }
     }
@@ -1495,9 +1500,17 @@ class MainActivity : Activity() {
         val likeView = views.getOrNull(0) as? TextView
         val commentView = views.getOrNull(1) as? TextView
         val shareView = views.getOrNull(2) as? TextView
+        val followView = views.getOrNull(3) as? TextView
         SupabaseApi.getWithError(this, "media_like_counts?select=like_count&media_id=eq." + mediaId) { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) likeView?.text = if (rows.length() > 0) rows.getJSONObject(0).optString("like_count", "0") else "0" } }
         SupabaseApi.getWithError(this, "media_comments?select=id&media_id=eq." + mediaId + "&limit=1000") { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) commentView?.text = rows.length().toString() } }
         SupabaseApi.getWithError(this, "media_share_counts?select=share_count&media_id=eq." + mediaId) { rows, _ -> runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) shareView?.text = if (rows.length() > 0) rows.getJSONObject(0).optString("share_count", "0") else "0" } }
+        val pageId = item.optString("ministry_id")
+        val userId = AuthApi.currentUserId(this)
+        if (followView != null && pageId.isNotBlank() && userId.isNotBlank()) {
+            SupabaseApi.getWithError(this, "ministry_follows?select=user_id&user_id=eq.$userId&ministry_id=eq.$pageId&limit=1") { rows, _ ->
+                runOnUiThread { if (homeFeedItems.getOrNull(homeFeedIndex) === item) followView.text = if (rows.length() > 0) "Following" else "Follow" }
+            }
+        } else followView?.text = "Follow"
     }
 
     private fun shareCurrentFeedItem() {
